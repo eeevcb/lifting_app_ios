@@ -204,7 +204,8 @@ enum WorkoutEngine {
     }
 
     private static func shouldAddDefaultVariation(for entry: ProgramEntry) -> Bool {
-        entry.plannedType == .deload || entry.primaryLift == .shoulderPress
+        (entry.plannedType == .deload || entry.primaryLift == .shoulderPress)
+            && !ProgramDefinition.variationProfiles(for: entry.primaryLift).isEmpty
     }
 
     private static func warmupScheme(for lift: LiftType, topWeight: Double, plannedReps: Int, plannedType: PlannedSetType) -> [(type: WorkoutSetType, reps: Int, weight: Double)] {

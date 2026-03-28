@@ -4,6 +4,7 @@ struct WorkoutScreen: View {
     @Environment(AppModel.self) private var model
     @FocusState private var focusedField: WorkoutFieldFocus?
     @State private var activeRestTimer: ActiveRestTimer?
+    @State private var activeNumericInput: WorkoutNumericInput?
     @State private var customRestMinutesText = ""
     @State private var visibleWeekPageIndex = 0
 
@@ -78,6 +79,15 @@ struct WorkoutScreen: View {
                 cancel: { activeRestTimer = nil }
             )
         }
+        .sheet(item: $activeNumericInput) { input in
+            NumericInputSheet(
+                input: input,
+                save: { value in
+                    applyNumericInput(input, value: value)
+                },
+                cancel: { activeNumericInput = nil }
+            )
+        }
     }
 
     private var restTimerCard: some View {
@@ -85,10 +95,7 @@ struct WorkoutScreen: View {
             Text("Rest Timer")
                 .font(.headline)
 
-            HStack {
-                metricBlock(title: "Saved Default", value: durationText(seconds: model.lastUsedRestDurationSeconds))
-                metricBlock(title: "Auto Start", value: model.autoStartRestTimerOnCompletion ? "On" : "Off")
-            }
+            metricBlock(title: "Saved Default", value: durationText(seconds: model.lastUsedRestDurationSeconds))
 
             HStack {
                 restPresetButton(minutes: 2)
@@ -368,6 +375,9 @@ struct WorkoutScreen: View {
                 WorkoutSetRow(
                     set: set,
                     isWorkoutFinished: isFinished,
+                    onPresentNumericInput: { input in
+                        activeNumericInput = input
+                    },
                     onChange: { updatedSet, didCompleteNow in
                         model.updateSet(set.id) { current in
                             current = updatedSet
@@ -520,6 +530,31 @@ struct WorkoutScreen: View {
         activeRestTimer = ActiveRestTimer(seconds: seconds)
     }
 
+    private func applyNumericInput(_ input: WorkoutNumericInput, value: Double) {
+        model.updateSet(input.setID) { current in
+            switch input.field {
+            case .weight:
+                current.weight = value == 0 ? nil : value
+            case .reps:
+                current.reps = max(1, Int(value.rounded()))
+            case .rpe:
+                current.rpe = value == 0 ? nil : value
+                if value > 0 {
+                    current.completed = true
+                    current.skipped = false
+                }
+            case .chainCount:
+                current.chainCountPerSide = max(0, Int(value.rounded()))
+            }
+        }
+
+        if input.field == .rpe, value > 0, model.autoStartRestTimerOnCompletion {
+            presentRestTimer(seconds: model.lastUsedRestDurationSeconds)
+        }
+
+        activeNumericInput = nil
+    }
+
     private var weekPages: [[Int]] {
         stride(from: 0, to: model.weeks.count, by: 3).map { start in
             Array(model.weeks[start..<min(start + 3, model.weeks.count)])
@@ -552,6 +587,25 @@ struct WorkoutScreen: View {
 
 private enum WorkoutFieldFocus: Hashable {
     case customRestMinutes
+}
+
+private enum WorkoutNumericField: Hashable {
+    case weight
+    case reps
+    case rpe
+    case chainCount
+}
+
+private struct WorkoutNumericInput: Identifiable {
+    let setID: UUID
+    let field: WorkoutNumericField
+    let title: String
+    let values: [Double]
+    let selectedValue: Double
+
+    var id: String {
+        "\(setID.uuidString)-\(title)"
+    }
 }
 
 private struct ActiveRestTimer: Identifiable {
@@ -773,11 +827,13 @@ private struct CompletionSummarySheet: View {
 private struct WorkoutSetRow: View {
     let set: WorkoutSet
     let isWorkoutFinished: Bool
+    let onPresentNumericInput: (WorkoutNumericInput) -> Void
     let onChange: (WorkoutSet, Bool) -> Void
     let onDelete: () -> Void
 
     private let insetBackground = Color(uiColor: .systemBackground)
     private var isLocked: Bool { self.isWorkoutFinished || self.set.completed || self.set.skipped }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
@@ -799,36 +855,45 @@ private struct WorkoutSetRow: View {
             }
 
             HStack {
-                labeledField(
-                    title: "Weight",
-                    readOnlyValue: weightDisplayValue
-                ) {
-                    weightControl
+                labeledField(title: "Weight", readOnlyValue: weightDisplayValue) {
+                    inputButton(weightDisplayValue == "--" ? "Set Weight" : weightDisplayValue) {
+                        onPresentNumericInput(
+                            WorkoutNumericInput(
+                                setID: set.id,
+                                field: .weight,
+                                title: "Weight",
+                                values: stride(from: 0.0, through: 1000.0, by: 5.0).map { $0 },
+                                selectedValue: (set.weight ?? 0).rounded(.toNearestOrAwayFromZero)
+                            )
+                        )
+                    }
                 }
 
-                labeledField(
-                    title: "Reps",
-                    readOnlyValue: set.reps.map(String.init) ?? "--"
-                ) {
-                        integerControl(
-                            decrementLabel: "-",
-                            incrementLabel: "+",
-                            displayValue: set.reps.map(String.init) ?? "0"
-                        ) { delta in
-                            updateInt(\.reps, maxValue: 50, delta: delta)
-                        }
+                labeledField(title: "Reps", readOnlyValue: set.reps.map(String.init) ?? "--") {
+                    inputButton(set.reps.map(String.init) ?? "Set Reps") {
+                        onPresentNumericInput(
+                            WorkoutNumericInput(
+                                setID: set.id,
+                                field: .reps,
+                                title: "Reps",
+                                values: Array(1...10).map(Double.init),
+                                selectedValue: Double(set.reps ?? 1)
+                            )
+                        )
+                    }
                 }
 
-                labeledField(
-                    title: "RPE",
-                    readOnlyValue: set.rpe.map { String(format: "%.1f", $0) } ?? "--"
-                ) {
-                    decimalControl(
-                        displayValue: set.rpe.map(compactDisplay) ?? "0",
-                        decrementLabel: "-0.5",
-                        incrementLabel: "+0.5"
-                    ) { delta in
-                        updateDouble(\.rpe, maxValue: 10, delta: delta, autoCompleteWhenPositive: true)
+                labeledField(title: "RPE", readOnlyValue: set.rpe.map { String(format: "%.1f", $0) } ?? "--") {
+                    inputButton(set.rpe.map(compactDisplay) ?? "Set RPE") {
+                        onPresentNumericInput(
+                            WorkoutNumericInput(
+                                setID: set.id,
+                                field: .rpe,
+                                title: "RPE",
+                                values: stride(from: 0.0, through: 10.0, by: 0.5).map { $0 },
+                                selectedValue: set.rpe ?? 0
+                            )
+                        )
                     }
                 }
             }
@@ -894,21 +959,35 @@ private struct WorkoutSetRow: View {
             .foregroundStyle(.secondary)
     }
 
+    private func inputButton(_ value: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text(value)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 10)
+                .background(Color(uiColor: .secondarySystemBackground), in: RoundedRectangle(cornerRadius: 8))
+                .foregroundStyle(.primary)
+        }
+        .buttonStyle(.plain)
+        .disabled(isLocked)
+    }
+
     @ViewBuilder
     private var variationDetails: some View {
         VStack(alignment: .leading, spacing: 10) {
             if let chainUnitWeightPerSide = set.chainUnitWeightPerSide {
                 HStack {
-                    labeledField(
-                        title: "Chains / Side",
-                        readOnlyValue: "\(set.chainCountPerSide)"
-                    ) {
-                        integerControl(
-                            decrementLabel: "-",
-                            incrementLabel: "+",
-                            displayValue: "\(set.chainCountPerSide)"
-                        ) { delta in
-                            updateNonOptionalInt(\.chainCountPerSide, maxValue: 20, delta: delta)
+                    labeledField(title: "Chains / Side", readOnlyValue: "\(set.chainCountPerSide)") {
+                        inputButton("\(set.chainCountPerSide)") {
+                            onPresentNumericInput(
+                                WorkoutNumericInput(
+                                    setID: set.id,
+                                    field: .chainCount,
+                                    title: "Chains / Side",
+                                    values: Array(0...20).map(Double.init),
+                                    selectedValue: Double(set.chainCountPerSide)
+                                )
+                            )
                         }
                     }
 
@@ -955,112 +1034,70 @@ private struct WorkoutSetRow: View {
         .background(Color(uiColor: .secondarySystemBackground), in: RoundedRectangle(cornerRadius: 10))
     }
 
-    private var weightControl: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 6) {
-                smallValueButton(label: "-10") { updateDouble(\.weight, maxValue: nil, delta: -10, autoCompleteWhenPositive: false) }
-                smallValueButton(label: "-5") { updateDouble(\.weight, maxValue: nil, delta: -5, autoCompleteWhenPositive: false) }
-            }
-
-            Text(weightDisplayValue == "--" ? "0" : weightDisplayValue)
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 10)
-                .background(Color(uiColor: .secondarySystemBackground), in: RoundedRectangle(cornerRadius: 8))
-
-            HStack(spacing: 6) {
-                smallValueButton(label: "+5") { updateDouble(\.weight, maxValue: nil, delta: 5, autoCompleteWhenPositive: false) }
-                smallValueButton(label: "+10") { updateDouble(\.weight, maxValue: nil, delta: 10, autoCompleteWhenPositive: false) }
-            }
-        }
-    }
-
-    private func integerControl(
-        decrementLabel: String,
-        incrementLabel: String,
-        displayValue: String,
-        action: @escaping (Int) -> Void
-    ) -> some View {
-        HStack(spacing: 6) {
-            smallValueButton(label: decrementLabel) {
-                action(-1)
-            }
-
-            Text(displayValue)
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 10)
-                .background(Color(uiColor: .secondarySystemBackground), in: RoundedRectangle(cornerRadius: 8))
-
-            smallValueButton(label: incrementLabel) {
-                action(1)
-            }
-        }
-    }
-
-    private func decimalControl(displayValue: String, decrementLabel: String, incrementLabel: String, action: @escaping (Double) -> Void) -> some View {
-        HStack(spacing: 6) {
-            smallValueButton(label: decrementLabel) {
-                action(-0.5)
-            }
-
-            Text(displayValue)
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 10)
-                .background(Color(uiColor: .secondarySystemBackground), in: RoundedRectangle(cornerRadius: 8))
-
-            smallValueButton(label: incrementLabel) {
-                action(0.5)
-            }
-        }
-    }
-
-    private func smallValueButton(label: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Text(label)
-                .font(.footnote.weight(.semibold))
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 8)
-        }
-        .buttonStyle(.bordered)
-        .disabled(isLocked)
-    }
-
-    private func updateDouble(
-        _ keyPath: WritableKeyPath<WorkoutSet, Double?>,
-        maxValue: Double?,
-        delta: Double,
-        autoCompleteWhenPositive: Bool
-    ) {
-        var updated = set
-        let currentValue = updated[keyPath: keyPath] ?? 0
-        let nextValue = max(0, maxValue.map { min(currentValue + delta, $0) } ?? (currentValue + delta))
-        let didCompleteNow = autoCompleteWhenPositive && nextValue > 0 && !set.completed
-        updated[keyPath: keyPath] = nextValue == 0 ? nil : nextValue
-        if autoCompleteWhenPositive, nextValue > 0 {
-            updated.completed = true
-            updated.skipped = false
-        }
-        onChange(updated, didCompleteNow)
-    }
-
-    private func updateInt(_ keyPath: WritableKeyPath<WorkoutSet, Int?>, maxValue: Int, delta: Int) {
-        var updated = set
-        let currentValue = updated[keyPath: keyPath] ?? 0
-        let nextValue = max(0, min(currentValue + delta, maxValue))
-        updated[keyPath: keyPath] = nextValue == 0 ? nil : nextValue
-        onChange(updated, false)
-    }
-
-    private func updateNonOptionalInt(_ keyPath: WritableKeyPath<WorkoutSet, Int>, maxValue: Int, delta: Int) {
-        var updated = set
-        let currentValue = updated[keyPath: keyPath]
-        updated[keyPath: keyPath] = max(0, min(currentValue + delta, maxValue))
-        onChange(updated, false)
-    }
-
     private func compactDisplay(_ value: Double) -> String {
         if value.rounded() == value {
             return String(Int(value))
         }
         return String(format: "%.1f", value)
+    }
+}
+
+private struct NumericInputSheet: View {
+    let input: WorkoutNumericInput
+    let save: (Double) -> Void
+    let cancel: () -> Void
+
+    @State private var selectedValue: Double
+
+    init(input: WorkoutNumericInput, save: @escaping (Double) -> Void, cancel: @escaping () -> Void) {
+        self.input = input
+        self.save = save
+        self.cancel = cancel
+        _selectedValue = State(initialValue: input.values.contains(input.selectedValue) ? input.selectedValue : (input.values.first ?? input.selectedValue))
+    }
+
+    var body: some View {
+        NavigationStack {
+            VStack(spacing: 20) {
+                Picker(input.title, selection: $selectedValue) {
+                    ForEach(input.values, id: \.self) { value in
+                        Text(display(value))
+                            .tag(value)
+                    }
+                }
+                .pickerStyle(.wheel)
+                .labelsHidden()
+
+                Button("Save") {
+                    save(selectedValue)
+                }
+                .buttonStyle(.borderedProminent)
+
+                Spacer()
+            }
+            .padding()
+            .navigationTitle(input.title)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button("Cancel", action: cancel)
+                }
+            }
+        }
+        .presentationDetents([.medium])
+    }
+
+    private func display(_ value: Double) -> String {
+        switch input.field {
+        case .weight:
+            return "\(Int(value)) lb"
+        case .reps, .chainCount:
+            return "\(Int(value))"
+        case .rpe:
+            if value.rounded() == value {
+                return String(Int(value))
+            }
+            return String(format: "%.1f", value)
+        }
     }
 }

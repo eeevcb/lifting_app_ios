@@ -49,7 +49,7 @@ enum ProgramDefinition {
         ProgramEntry(week: 11, day: .monday, primaryLift: .squat, plannedType: .opener, sets: 1, reps: 1, phase: .peak),
         ProgramEntry(week: 11, day: .wednesday, primaryLift: .bench, plannedType: .opener, sets: 1, reps: 1, phase: .peak),
         ProgramEntry(week: 11, day: .thursday, primaryLift: .shoulderPress, plannedType: .workingSets, sets: 3, reps: 3, phase: .taper),
-        ProgramEntry(week: 11, day: .friday, primaryLift: .barbellRow, plannedType: .workingSets, sets: 4, reps: 8, phase: .taper),
+        ProgramEntry(week: 11, day: .friday, primaryLift: .barbellRow, plannedType: .deload, sets: 4, reps: 5, phase: .taper),
         ProgramEntry(week: 12, day: .monday, primaryLift: .squat, plannedType: .deload, sets: 5, reps: 5, phase: .taper),
         ProgramEntry(week: 12, day: .wednesday, primaryLift: .bench, plannedType: .deload, sets: 5, reps: 5, phase: .taper),
         ProgramEntry(week: 12, day: .thursday, primaryLift: .shoulderPress, plannedType: .deload, sets: 5, reps: 5, phase: .taper),

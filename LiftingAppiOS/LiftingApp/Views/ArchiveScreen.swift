@@ -105,7 +105,7 @@ private struct ArchiveRunDetailScreen: View {
                     VStack(alignment: .leading, spacing: 20) {
                         ProgramSummaryCard(summary: model.summary(for: run), isArchived: true)
                         archiveLiftTrendCard(title: "Estimated 1RM Trend", series: model.estimatedOneRepMaxTrendByLift(for: run))
-                        archiveTrendCard(title: "Weekly Volume (Tonnage)", points: model.weeklyVolumeTrend(for: run), color: .green)
+                        archiveTrendCard(title: "Weekly Volume (Tonnage)", points: model.weeklyVolumeTrend(for: run), color: .green, yAxisLabelMode: .abbreviated)
                         archiveTrendCard(title: "Fatigue Flags", points: model.fatigueTimeline(for: run), color: .orange)
                         archiveTrendCard(title: "Target Shifts", points: model.targetAdjustmentTimeline(for: run), color: .pink, yAxisLabelMode: .percent)
                         liftCalloutsCard(summary: model.summary(for: run))
@@ -161,6 +161,7 @@ private struct ArchiveRunDetailScreen: View {
                         }
                     }
                     .chartXScale(domain: 1...12)
+                    .chartYScale(domain: chartDomain(for: points, mode: yAxisLabelMode))
                     .chartXAxis {
                         AxisMarks(values: Array(1...12)) { value in
                             if let week = value.as(Int.self) {
@@ -178,6 +179,8 @@ private struct ArchiveRunDetailScreen: View {
                                     AxisValueLabel(numericValue.formatted(.number.precision(.fractionLength(0))))
                                 case .percent:
                                     AxisValueLabel("\(Int(numericValue))%")
+                                case .abbreviated:
+                                    AxisValueLabel(abbreviated(numericValue))
                                 }
                             }
                         }
@@ -225,6 +228,7 @@ private struct ArchiveRunDetailScreen: View {
                     }
                 }
                 .chartXScale(domain: 1...12)
+                .chartYScale(domain: liftChartDomain(for: series))
                 .chartXAxis {
                     AxisMarks(values: Array(1...12)) { value in
                         if let week = value.as(Int.self) {
@@ -233,7 +237,13 @@ private struct ArchiveRunDetailScreen: View {
                     }
                 }
                 .chartYAxis {
-                    AxisMarks(position: .leading, values: .automatic(desiredCount: 5))
+                    AxisMarks(position: .leading, values: .automatic(desiredCount: 5)) { value in
+                        AxisGridLine()
+                        AxisTick()
+                        if let numericValue = value.as(Double.self) {
+                            AxisValueLabel(numericValue.formatted(.number.precision(.fractionLength(0))))
+                        }
+                    }
                 }
                 .frame(width: max(720, CGFloat(12) * 60), height: 240)
             }
@@ -344,21 +354,64 @@ private struct ArchiveRunDetailScreen: View {
     private func axisValues(for points: [AnalyticsPoint], mode: ArchiveTrendAxisLabelMode) -> [Double] {
         let values = points.compactMap(\.value)
         guard let minValue = values.min(), let maxValue = values.max() else {
-            return mode == .percent ? [-10, 0, 10] : [0, 1, 2]
+            switch mode {
+            case .percent:
+                return [-10, 0, 10]
+            case .numeric:
+                return [0, 1, 2]
+            case .abbreviated:
+                return [0, 1000, 2000]
+            }
         }
         if minValue == maxValue {
-            return mode == .percent
-                ? [minValue - 5, minValue, minValue + 5]
-                : [minValue - 1, minValue, minValue + 1]
+            switch mode {
+            case .percent:
+                return [minValue - 5, minValue, minValue + 5]
+            case .numeric:
+                return [minValue - 1, minValue, minValue + 1]
+            case .abbreviated:
+                return [max(0, minValue * 0.8), minValue, minValue * 1.2]
+            }
         }
         let midpoint = (minValue + maxValue) / 2
         return [minValue, midpoint, maxValue]
+    }
+
+    private func chartDomain(for points: [AnalyticsPoint], mode: ArchiveTrendAxisLabelMode) -> ClosedRange<Double> {
+        let values = points.compactMap(\.value)
+        guard let minValue = values.min(), let maxValue = values.max() else {
+            return mode == .percent ? (-10)...10 : 0...100
+        }
+        let padding = max((maxValue - minValue) * 0.15, mode == .percent ? 2 : 25)
+        let lower = mode == .percent ? minValue - padding : max(0, minValue - padding)
+        return lower...(maxValue + padding)
+    }
+
+    private func liftChartDomain(for series: [LiftTrendSeries]) -> ClosedRange<Double> {
+        let values = series.flatMap(\.points).compactMap(\.value)
+        guard let minValue = values.min(), let maxValue = values.max() else {
+            return 0...100
+        }
+        let padding = max((maxValue - minValue) * 0.15, 10)
+        return max(0, minValue - padding)...(maxValue + padding)
+    }
+
+    private func abbreviated(_ value: Double) -> String {
+        if abs(value) >= 1000 {
+            let thousands = value / 1000
+            if thousands.rounded() == thousands {
+                return "\(Int(thousands))k"
+            }
+            return String(format: "%.1fk", thousands)
+        }
+        return value.formatted(.number.precision(.fractionLength(0)))
     }
 }
 
 private enum ArchiveTrendAxisLabelMode {
     case numeric
     case percent
+    case abbreviated
 }
 
 private struct ArchiveTrendPlotPoint: Identifiable {

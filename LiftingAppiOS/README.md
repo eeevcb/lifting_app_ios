@@ -46,6 +46,7 @@ Variation lifts are seeded from the day's working-set target.
 ## Program updates
 
 - Week 11 Friday is now a back-only day with `Barbell Row` as the main lift
+- Week 11 Friday now runs as a light `4 x 5 @ 60%` deload-style row day
 - Finished workouts are locked until the user explicitly reopens them
 - Finished workouts can be reviewed from the summary sheet without re-running the same day
 - Reopening a workout restores the previously finished set values so users can correct data-entry mistakes
@@ -70,8 +71,8 @@ Deload days now generate real working sets instead of `0x0`.
 
 ## Workout input behavior
 
-- Workout-row weight, reps, RPE, and chain inputs use button-based step controls instead of typed keyboard entry
-- Weight uses quick jump buttons, reps and chains use integer steppers, and RPE uses `0.5` steps up to `10`
+- Workout-row weight, reps, RPE, and chain inputs use a shared modal spinner sheet instead of inline counters or typed keyboard entry
+- Weight uses `5 lb` increments, reps use bounded integer values, chains use bounded integer values, and RPE uses `0.5` steps up to `10`
 - Completed set rows lock their values until the user explicitly unchecks completion
 - Updating estimated 1RM preserves completed and skipped rows in the current draft
 - Only unfinished generated rows are recalculated when 1RM changes
@@ -86,6 +87,7 @@ Deload days now generate real working sets instead of `0x0`.
 - Quick picks `2`, `3`, and `5` minutes update the saved default immediately
 - Custom minutes update the saved default after tapping `Save`
 - Auto-start-on-completion is persisted and defaults to `on`
+- The rest timer card no longer repeats the auto-start state in a separate metric tile; the toggle is the source of truth
 - When the timer starts, it appears in a modal that can be closed early without changing the saved default
 
 ## Main files

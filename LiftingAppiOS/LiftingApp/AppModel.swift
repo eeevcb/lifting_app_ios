@@ -29,7 +29,7 @@ final class AppModel {
             drafts = snapshot.drafts
             activeRun = snapshot.activeRun
             archivedRuns = snapshot.archivedRuns
-            liftStates = snapshot.liftStates
+            liftStates = Self.normalizedLiftStates(snapshot.liftStates)
         } else {
             let defaultStartDate = ProgramDefinition.defaultStartDate
             programStartDate = defaultStartDate
@@ -63,7 +63,7 @@ final class AppModel {
 
     var currentLiftState: LiftState? {
         guard let currentEntry else { return nil }
-        return liftStates[currentEntry.primaryLift]
+        return liftStates[currentEntry.primaryLift] ?? LiftState.defaults[currentEntry.primaryLift]
     }
 
     var currentDraft: SessionDraft? {
@@ -694,5 +694,13 @@ final class AppModel {
         guard hasCompletedVariation else { return nil }
         let trimmedFallback = (fallback ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         return trimmedFallback.isEmpty ? nil : trimmedFallback
+    }
+
+    private static func normalizedLiftStates(_ states: [LiftType: LiftState]) -> [LiftType: LiftState] {
+        var normalized = LiftState.defaults
+        for (lift, state) in states {
+            normalized[lift] = state
+        }
+        return normalized
     }
 }

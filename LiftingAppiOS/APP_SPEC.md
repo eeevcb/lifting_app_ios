@@ -45,6 +45,7 @@ Small-screen chart layouts preserve the full 12-week span through horizontal scr
 - active-run summary
 - current 12-week program schedule
 - Week 11 Friday is a back-only `Barbell Row` day instead of a deadlift day
+- Week 11 Friday should use a deload-style `4 x 5 @ 60%` prescription
 - `Program Start Date` is edited from this page, not from the Workout tab
 - completion state attached to the active program run
 - start-new-program flow with archive-and-restart behavior
@@ -219,8 +220,8 @@ Persistence is file-backed JSON with migration support from earlier snapshot for
 
 ## Input and timer UX
 
-- Workout-row numeric inputs should use button-based step controls instead of typed keyboard entry
-- Weight should use quick jump buttons, reps and chains should use integer steps, and RPE should use `0.5` increments
+- Workout-row numeric inputs should use one shared modal spinner sheet instead of inline counters or typed keyboard entry
+- Weight should use `5 lb` increments, reps should use bounded integer values, chains should use bounded integer values, and RPE should use `0.5` increments
 - The custom rest-timer field remains the only typed numeric entry and should still support tap-outside dismissal plus keyboard `Done`
 - The workout screen is the place where the user sets the default rest duration
 - The workout screen should not edit the program start date
@@ -231,5 +232,6 @@ Persistence is file-backed JSON with migration support from earlier snapshot for
 - Preset buttons update the saved default
 - Custom timer entry updates the saved default after tapping `Save`
 - Marking a set completed can auto-start the timer when the user preference is enabled
+- The timer card should not duplicate auto-start state in a separate summary tile
 - The active timer is presented modally and can be canceled without changing the saved default
 - Skipped rows are locked and visually dimmed until unskipped
