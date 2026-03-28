@@ -63,7 +63,7 @@ final class AppModel {
 
     var currentTargetWeight: Double? {
         guard let entry = currentEntry, let liftState = currentLiftState else { return nil }
-        let target = WorkoutEngine.targetWeight(for: entry, estimatedOneRepMax: liftState.estimatedOneRepMax)
+        let target = WorkoutEngine.targetWeight(for: entry, liftState: liftState)
         return target == 0 ? nil : target
     }
 
@@ -191,6 +191,7 @@ final class AppModel {
         liftStates[entry.primaryLift] = result.updatedLiftState
         completedSessions.append(result.completedSession)
         drafts[entry.key] = WorkoutEngine.makeDraft(for: entry, liftState: result.updatedLiftState, variation: draft.selectedVariation)
+        refreshFutureDrafts(for: entry.primaryLift, after: entry, using: result.updatedLiftState)
         persist()
     }
 
@@ -232,5 +233,27 @@ final class AppModel {
             liftStates: liftStates
         )
         persistence.save(snapshot: snapshot)
+    }
+
+    private func refreshFutureDrafts(for lift: LiftType, after completedEntry: ProgramEntry, using liftState: LiftState) {
+        for (key, draft) in drafts {
+            guard draft.programEntry.primaryLift == lift else { continue }
+            guard draft.programEntry.key != completedEntry.key else { continue }
+            guard isAfter(draft.programEntry, completedEntry) else { continue }
+            guard completedSession(for: draft.programEntry) == nil else { continue }
+
+            drafts[key] = WorkoutEngine.makeDraft(
+                for: draft.programEntry,
+                liftState: liftState,
+                variation: draft.selectedVariation
+            )
+        }
+    }
+
+    private func isAfter(_ lhs: ProgramEntry, _ rhs: ProgramEntry) -> Bool {
+        if lhs.week != rhs.week {
+            return lhs.week > rhs.week
+        }
+        return lhs.day.weekdayIndex > rhs.day.weekdayIndex
     }
 }

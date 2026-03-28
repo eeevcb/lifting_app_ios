@@ -163,12 +163,13 @@ struct LiftState: Codable, Hashable {
     var fatigueScore: Double
     var lastSuccessfulSessionDate: Date?
     var lastRecommendation: EngineRecommendation
+    var lastTargetAdjustmentPercent: Double
 
     static let defaults: [LiftType: LiftState] = [
-        .squat: LiftState(trainingMax: 300, estimatedOneRepMax: 315, lastGoodWorkingWeight: nil, fatigueScore: 0, lastSuccessfulSessionDate: nil, lastRecommendation: .hold),
-        .bench: LiftState(trainingMax: 215, estimatedOneRepMax: 225, lastGoodWorkingWeight: nil, fatigueScore: 0, lastSuccessfulSessionDate: nil, lastRecommendation: .hold),
-        .deadlift: LiftState(trainingMax: 385, estimatedOneRepMax: 405, lastGoodWorkingWeight: nil, fatigueScore: 0, lastSuccessfulSessionDate: nil, lastRecommendation: .hold),
-        .shoulderPress: LiftState(trainingMax: 125, estimatedOneRepMax: 135, lastGoodWorkingWeight: nil, fatigueScore: 0, lastSuccessfulSessionDate: nil, lastRecommendation: .hold)
+        .squat: LiftState(trainingMax: 300, estimatedOneRepMax: 315, lastGoodWorkingWeight: nil, fatigueScore: 0, lastSuccessfulSessionDate: nil, lastRecommendation: .hold, lastTargetAdjustmentPercent: 0),
+        .bench: LiftState(trainingMax: 215, estimatedOneRepMax: 225, lastGoodWorkingWeight: nil, fatigueScore: 0, lastSuccessfulSessionDate: nil, lastRecommendation: .hold, lastTargetAdjustmentPercent: 0),
+        .deadlift: LiftState(trainingMax: 385, estimatedOneRepMax: 405, lastGoodWorkingWeight: nil, fatigueScore: 0, lastSuccessfulSessionDate: nil, lastRecommendation: .hold, lastTargetAdjustmentPercent: 0),
+        .shoulderPress: LiftState(trainingMax: 125, estimatedOneRepMax: 135, lastGoodWorkingWeight: nil, fatigueScore: 0, lastSuccessfulSessionDate: nil, lastRecommendation: .hold, lastTargetAdjustmentPercent: 0)
     ]
 }
 
@@ -189,11 +190,18 @@ struct SessionDraft: Identifiable, Codable, Hashable {
 }
 
 struct FatigueAssessment: Codable, Hashable {
+    var expectedRampEffort: Double
+    var expectedTopSetEffort: Double
+    var actualRampEffort: Double
+    var actualTopSetEffort: Double
     var expectedEffort: Double
     var actualEffort: Double
+    var effortDelta: Double
     var rampFatigue: Double
     var topSetFatigue: Double
     var skipBackoffWork: Bool
+    var targetAdjustmentPercent: Double
+    var backoffDecisionReason: String
     var recommendation: EngineRecommendation
 }
 

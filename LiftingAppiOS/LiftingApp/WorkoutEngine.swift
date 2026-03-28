@@ -22,7 +22,7 @@ enum WorkoutEngine {
     }
 
     static func initialSets(for entry: ProgramEntry, liftState: LiftState, variation: String) -> [WorkoutSet] {
-        let topWeight = targetWeight(for: entry, estimatedOneRepMax: liftState.estimatedOneRepMax)
+        let topWeight = targetWeight(for: entry, liftState: liftState)
         let warmups = warmupScheme(for: entry.primaryLift, topWeight: topWeight, plannedReps: entry.reps, plannedType: entry.plannedType)
 
         var sets: [WorkoutSet] = warmups.enumerated().map { index, scheme in
@@ -80,7 +80,7 @@ enum WorkoutEngine {
     static func addSet(to draft: SessionDraft, setType: WorkoutSetType, liftState: LiftState) -> SessionDraft {
         var updatedDraft = draft
         let plan = draft.programEntry
-        let topWeight = targetWeight(for: plan, estimatedOneRepMax: liftState.estimatedOneRepMax)
+        let topWeight = targetWeight(for: plan, liftState: liftState)
         let matchingSetCount = draft.sets.filter { $0.setType == setType }.count
 
         let weight: Double? = switch setType {
@@ -119,22 +119,29 @@ enum WorkoutEngine {
 
     static func completeSession(_ draft: SessionDraft, liftState: LiftState, date: Date = .now) -> SessionCompletionResult {
         let fatigue = assessFatigue(for: draft)
-        let summary = makeSummary(for: draft)
-        let updatedState = updateLiftState(from: liftState, draft: draft, fatigue: fatigue, summary: summary, performedOn: date)
-        let nextTarget = targetWeight(for: draft.programEntry, estimatedOneRepMax: updatedState.estimatedOneRepMax)
+        let adjustedDraft = applyBackoffDecision(to: draft, fatigue: fatigue)
+        let summary = makeSummary(for: adjustedDraft)
+        let updatedState = updateLiftState(from: liftState, draft: adjustedDraft, fatigue: fatigue, summary: summary, performedOn: date)
+        let nextTarget = targetWeight(for: draft.programEntry, liftState: updatedState)
 
         let completed = CompletedSession(
             id: draft.id,
             programEntry: draft.programEntry,
             performedOn: date,
             variation: draft.selectedVariation,
-            sets: draft.sets.sortedForDisplay(),
+            sets: adjustedDraft.sets.sortedForDisplay(),
             fatigue: fatigue,
             summary: summary,
             nextTargetWeight: nextTarget == 0 ? nil : nextTarget
         )
 
         return SessionCompletionResult(completedSession: completed, updatedLiftState: updatedState)
+    }
+
+    static func targetWeight(for entry: ProgramEntry, liftState: LiftState) -> Double {
+        let effectiveOneRepMax = min(liftState.estimatedOneRepMax, liftState.trainingMax / 0.95)
+        let adjustedPercent = max(0.82, 1 + liftState.lastTargetAdjustmentPercent)
+        return roundToIncrement(effectiveOneRepMax * targetPercent(for: entry) * adjustedPercent)
     }
 
     static func targetWeight(for entry: ProgramEntry, estimatedOneRepMax: Double) -> Double {
@@ -204,28 +211,65 @@ enum WorkoutEngine {
     }
 
     private static func assessFatigue(for draft: SessionDraft) -> FatigueAssessment {
-        let topAndRampSets = draft.sets.filter { !$0.skipped && $0.completed && ($0.setType == .ramp || $0.setType == .topSet) }
-        let averageRPE = topAndRampSets.compactMap(\.rpe).average ?? defaultExpectedEffort(for: draft.programEntry)
-        let rampRPE = draft.sets.filter { $0.completed && $0.setType == .ramp }.compactMap(\.rpe).average ?? averageRPE
-        let topSetRPE = draft.sets.filter { $0.completed && $0.setType == .topSet }.compactMap(\.rpe).average ?? averageRPE
-        let expectedEffort = defaultExpectedEffort(for: draft.programEntry)
-        let fatigueDelta = max(0, averageRPE - expectedEffort)
+        let entry = draft.programEntry
+        let expectedRampEffort = expectedRampEffort(for: entry)
+        let expectedTopSetEffort = expectedTopSetEffort(for: entry)
+
+        let completedRampSets = draft.sets.filter { $0.completed && !$0.skipped && $0.setType == .ramp }
+        let completedTopSets = draft.sets.filter { $0.completed && !$0.skipped && $0.setType == .topSet }
+        let actualRampEffort = completedRampSets.compactMap(\.rpe).average ?? expectedRampEffort
+        let actualTopSetEffort = completedTopSets.compactMap(\.rpe).average ?? expectedTopSetEffort
+
+        let expectedEffort = (expectedRampEffort * 0.35) + (expectedTopSetEffort * 0.65)
+        let actualEffort = weightedActualEffort(ramp: actualRampEffort, top: actualTopSetEffort, completedRampSets: completedRampSets.count, completedTopSets: completedTopSets.count)
+        let effortDelta = actualEffort - expectedEffort
+        let rampFatigue = actualRampEffort - expectedRampEffort
+        let topSetFatigue = actualTopSetEffort - expectedTopSetEffort
+        let missedTopSet = draft.sets.contains { $0.setType == .topSet && ($0.skipped || !$0.completed) }
 
         let recommendation: EngineRecommendation
-        if fatigueDelta >= 2 || topSetRPE >= 9.5 {
+        if missedTopSet || topSetFatigue >= 1.5 || effortDelta >= 1.25 {
             recommendation = .deload
-        } else if fatigueDelta >= 1 || rampRPE >= 8.5 {
+        } else if topSetFatigue >= 0.75 || rampFatigue >= 0.75 || effortDelta >= 0.6 {
             recommendation = .reduce
         } else {
             recommendation = .hold
         }
 
+        let skipBackoffWork = draft.sets.contains(where: { $0.setType == .backoff }) && (recommendation != .hold || topSetFatigue >= 0.5 || rampFatigue >= 1.0)
+        let targetAdjustmentPercent: Double
+        if recommendation == .deload {
+            targetAdjustmentPercent = -0.08
+        } else if recommendation == .reduce {
+            targetAdjustmentPercent = -0.03
+        } else if effortDelta <= -0.35 && !missedTopSet {
+            targetAdjustmentPercent = 0.02
+        } else {
+            targetAdjustmentPercent = 0
+        }
+
+        let decisionReason: String
+        if skipBackoffWork {
+            decisionReason = recommendation == .deload
+                ? "Backoff work skipped because top-set fatigue was well above expectation."
+                : "Backoff work skipped because ramp or top-set effort was above target."
+        } else {
+            decisionReason = "Backoff work remains in plan because fatigue stayed within range."
+        }
+
         return FatigueAssessment(
+            expectedRampEffort: expectedRampEffort,
+            expectedTopSetEffort: expectedTopSetEffort,
+            actualRampEffort: actualRampEffort,
+            actualTopSetEffort: actualTopSetEffort,
             expectedEffort: expectedEffort,
-            actualEffort: averageRPE,
-            rampFatigue: max(0, rampRPE - expectedEffort),
-            topSetFatigue: max(0, topSetRPE - expectedEffort),
-            skipBackoffWork: recommendation != .hold,
+            actualEffort: actualEffort,
+            effortDelta: effortDelta,
+            rampFatigue: rampFatigue,
+            topSetFatigue: topSetFatigue,
+            skipBackoffWork: skipBackoffWork,
+            targetAdjustmentPercent: targetAdjustmentPercent,
+            backoffDecisionReason: decisionReason,
             recommendation: recommendation
         )
     }
@@ -234,18 +278,20 @@ enum WorkoutEngine {
         var updated = current
         let bestEstimatedOneRepMax = summary.bestEstimatedOneRepMax ?? current.estimatedOneRepMax
         let topWeight = draft.sets.filter { $0.completed && $0.setType == .topSet }.compactMap(\.weight).max()
+        let targetTrainingMax = roundToIncrement(bestEstimatedOneRepMax * 0.94)
 
         updated.estimatedOneRepMax = round((current.estimatedOneRepMax * 0.7) + (bestEstimatedOneRepMax * 0.3))
         updated.lastGoodWorkingWeight = topWeight ?? current.lastGoodWorkingWeight
         updated.lastRecommendation = fatigue.recommendation
-        updated.fatigueScore = min(10, max(0, (current.fatigueScore * 0.6) + (fatigue.actualEffort - fatigue.expectedEffort) * 1.4))
+        updated.lastTargetAdjustmentPercent = fatigue.targetAdjustmentPercent
+        updated.fatigueScore = min(10, max(0, (current.fatigueScore * 0.55) + max(0, fatigue.effortDelta) * 2 + max(0, fatigue.topSetFatigue) * 1.25))
         if fatigue.recommendation == .hold {
-            updated.trainingMax = roundToIncrement(current.trainingMax * 0.98 + updated.estimatedOneRepMax * 0.95 * 0.02)
+            updated.trainingMax = roundToIncrement(max(45, current.trainingMax * 0.9 + targetTrainingMax * 0.1 + (fatigue.targetAdjustmentPercent > 0 ? 2.5 : 0)))
             updated.lastSuccessfulSessionDate = performedOn
         } else if fatigue.recommendation == .reduce {
-            updated.trainingMax = roundToIncrement(max(current.trainingMax * 0.97, current.trainingMax - 10))
+            updated.trainingMax = roundToIncrement(max(45, current.trainingMax * 0.92 + targetTrainingMax * 0.08 - 5))
         } else {
-            updated.trainingMax = roundToIncrement(max(current.trainingMax * 0.93, current.trainingMax - 20))
+            updated.trainingMax = roundToIncrement(max(45, current.trainingMax * 0.88 + targetTrainingMax * 0.12 - 10))
         }
 
         return updated
@@ -277,6 +323,54 @@ enum WorkoutEngine {
         case .peak: 8.5
         case .taper: 6.5
         }
+    }
+
+    private static func expectedRampEffort(for entry: ProgramEntry) -> Double {
+        switch entry.phase {
+        case .volume: 6.0
+        case .strength: 6.8
+        case .peak: 7.4
+        case .taper: 5.8
+        }
+    }
+
+    private static func expectedTopSetEffort(for entry: ProgramEntry) -> Double {
+        switch entry.plannedType {
+        case .deload:
+            return 6.0
+        case .opener:
+            return 7.8
+        case .maxSingle:
+            return 8.8
+        case .workingSets:
+            return defaultExpectedEffort(for: entry) + (entry.reps <= 2 ? 0.4 : 0)
+        }
+    }
+
+    private static func weightedActualEffort(ramp: Double, top: Double, completedRampSets: Int, completedTopSets: Int) -> Double {
+        switch (completedRampSets > 0, completedTopSets > 0) {
+        case (true, true):
+            return (ramp * 0.35) + (top * 0.65)
+        case (true, false):
+            return ramp
+        case (false, true):
+            return top
+        case (false, false):
+            return top
+        }
+    }
+
+    private static func applyBackoffDecision(to draft: SessionDraft, fatigue: FatigueAssessment) -> SessionDraft {
+        guard fatigue.skipBackoffWork else { return draft }
+
+        var updatedDraft = draft
+        updatedDraft.sets = updatedDraft.sets.map { set in
+            guard set.setType == .backoff, !set.completed else { return set }
+            var updated = set
+            updated.skipped = true
+            return updated
+        }
+        return updatedDraft
     }
 
     private static func roundToIncrement(_ value: Double, increment: Double = 5) -> Double {
