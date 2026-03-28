@@ -99,7 +99,7 @@ final class AppModel {
                 }
                 .max(),
             completedSetCount: draft.sets.filter { $0.completed && !$0.skipped }.count,
-            variationUsed: actualVariationName(from: draft.sets, fallback: draft.selectedVariation.profileName)
+            variationUsed: actualVariationName(from: draft.sets, fallback: nil)
         )
     }
 
@@ -317,37 +317,35 @@ final class AppModel {
         persist()
     }
 
-    func updateVariation(_ value: String) {
-        guard var draft = currentDraft, let currentEntry else { return }
-        guard let profile = ProgramDefinition.variationProfile(named: value, for: currentEntry.primaryLift) else { return }
-        let liftState = currentLiftState ?? LiftState.defaults[currentEntry.primaryLift]!
-        draft.selectedVariation = ProgramDefinition.defaultSelection(for: profile)
-        draft.sets = draft.sets.map { set in
-            guard set.setType == .variation else { return set }
-            return WorkoutEngine.makeVariationSet(
-                for: currentEntry,
-                liftState: liftState,
-                selection: draft.selectedVariation,
-                setOrder: set.setOrder
-            )
-        }
-        drafts[currentEntry.key] = draft
-        persist()
-    }
-
-    func updateVariationChainCount(_ chainCountPerSide: Int) {
+    func updateVariation(for setID: UUID, to profileName: String) {
         guard let currentEntry, var draft = drafts[currentEntry.key] else { return }
-        draft.selectedVariation.chainCountPerSide = max(0, chainCountPerSide)
+        guard let profile = ProgramDefinition.variationProfile(named: profileName, for: currentEntry.primaryLift) else { return }
+        guard let index = draft.sets.firstIndex(where: { $0.id == setID }) else { return }
         let liftState = currentLiftState ?? LiftState.defaults[currentEntry.primaryLift]!
-        draft.sets = draft.sets.map { set in
-            guard set.setType == .variation else { return set }
-            return WorkoutEngine.makeVariationSet(
-                for: currentEntry,
-                liftState: liftState,
-                selection: draft.selectedVariation,
-                setOrder: set.setOrder
-            )
+        let currentSet = draft.sets[index]
+        let selection = ProgramDefinition.defaultSelection(for: profile)
+        let regeneratedSet = WorkoutEngine.makeVariationSet(
+            for: currentEntry,
+            liftState: liftState,
+            selection: selection,
+            setOrder: currentSet.setOrder
+        )
+
+        draft.sets[index].exerciseName = regeneratedSet.exerciseName
+        draft.sets[index].weight = regeneratedSet.weight
+        draft.sets[index].reps = regeneratedSet.reps
+        draft.sets[index].rpe = nil
+        draft.sets[index].completed = false
+        draft.sets[index].skipped = false
+        draft.sets[index].variationProfileName = regeneratedSet.variationProfileName
+        draft.sets[index].chainCountPerSide = regeneratedSet.chainCountPerSide
+        draft.sets[index].chainUnitWeightPerSide = regeneratedSet.chainUnitWeightPerSide
+        draft.sets = draft.sets.sortedForDisplay().enumerated().map { index, set in
+            var reordered = set
+            reordered.setOrder = index + 1
+            return reordered
         }
+
         drafts[currentEntry.key] = draft
         persist()
     }
@@ -356,11 +354,6 @@ final class AppModel {
         guard let currentEntry, var draft = drafts[currentEntry.key] else { return }
         guard let index = draft.sets.firstIndex(where: { $0.id == setID }) else { return }
         mutate(&draft.sets[index])
-        let updatedSet = draft.sets[index]
-        if updatedSet.setType == .variation {
-            draft.selectedVariation.profileName = updatedSet.variationProfileName ?? updatedSet.exerciseName
-            draft.selectedVariation.chainCountPerSide = updatedSet.chainCountPerSide
-        }
         draft.sets = draft.sets.sortedForDisplay().enumerated().map { index, set in
             var reordered = set
             reordered.setOrder = index + 1
@@ -414,7 +407,9 @@ final class AppModel {
     func reopenCurrentWorkout() {
         guard let entry = currentEntry else { return }
         guard let session = completedSession(for: entry) else { return }
-        let existingSelection = drafts[entry.key]?.selectedVariation ?? VariationSelection(profileName: session.variation)
+        let existingSelection = drafts[entry.key]?.selectedVariation
+            ?? variationSelection(from: session)
+            ?? ProgramDefinition.defaultVariationSelection(for: entry.primaryLift)
 
         activeRun.completedSessions.removeAll { $0.id == session.id }
         if lastCompletionSummary?.id == session.id {
@@ -690,10 +685,24 @@ final class AppModel {
     }
 
     private func actualVariationName(from sets: [WorkoutSet], fallback: String?) -> String? {
-        let hasCompletedVariation = sets.contains { $0.setType == .variation && $0.completed && !$0.skipped }
-        guard hasCompletedVariation else { return nil }
+        let variationNames = Array(Set(
+            sets
+                .filter { $0.setType == .variation && $0.completed && !$0.skipped }
+                .compactMap { $0.variationProfileName ?? $0.exerciseName }
+                .filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+        )).sorted()
+        if !variationNames.isEmpty {
+            return variationNames.joined(separator: ", ")
+        }
+
         let trimmedFallback = (fallback ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         return trimmedFallback.isEmpty ? nil : trimmedFallback
+    }
+
+    private func variationSelection(from session: CompletedSession) -> VariationSelection? {
+        guard let variationSet = session.sets.first(where: { $0.setType == .variation }) else { return nil }
+        let profileName = variationSet.variationProfileName ?? variationSet.exerciseName
+        return VariationSelection(profileName: profileName, chainCountPerSide: variationSet.chainCountPerSide)
     }
 
     private static func normalizedLiftStates(_ states: [LiftType: LiftState]) -> [LiftType: LiftState] {

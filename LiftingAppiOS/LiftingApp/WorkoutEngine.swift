@@ -133,7 +133,7 @@ enum WorkoutEngine {
             id: draft.id,
             programEntry: draft.programEntry,
             performedOn: date,
-            variation: draft.selectedVariation.profileName,
+            variation: variationSummaryText(from: adjustedDraft.sets) ?? "",
             sets: adjustedDraft.sets.sortedForDisplay(),
             fatigue: fatigue,
             summary: summary,
@@ -384,7 +384,7 @@ enum WorkoutEngine {
 
         let totalVolume = sortedSets.reduce(0) { $0 + $1.volumeContribution }
         let completedSetCount = sortedSets.filter { $0.completed && !$0.skipped }.count
-        let variation = sortedSets.contains(where: { $0.setType == .variation && $0.completed && !$0.skipped }) ? draft.selectedVariation.profileName : nil
+        let variation = variationSummaryText(from: sortedSets)
 
         return SessionSummary(
             totalVolume: totalVolume,
@@ -392,6 +392,18 @@ enum WorkoutEngine {
             completedSetCount: completedSetCount,
             variationUsed: variation
         )
+    }
+
+    private static func variationSummaryText(from sets: [WorkoutSet]) -> String? {
+        let variationNames = Array(Set(
+            sets
+                .filter { $0.setType == .variation && $0.completed && !$0.skipped }
+                .compactMap { $0.variationProfileName ?? $0.exerciseName }
+                .filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+        )).sorted()
+
+        guard !variationNames.isEmpty else { return nil }
+        return variationNames.joined(separator: ", ")
     }
 
     private static func expectedRampEffort(for entry: ProgramEntry) -> Double {

@@ -7,6 +7,8 @@ struct WorkoutScreen: View {
     @State private var activeNumericInput: WorkoutNumericInput?
     @State private var customRestMinutesText = ""
     @State private var visibleWeekPageIndex = 0
+    @State private var isRestTimerCollapsed = false
+    @State private var collapsedSections: Set<WorkoutSetType> = []
 
     private let cardBackground = Color(uiColor: .secondarySystemBackground)
     private let insetBackground = Color(uiColor: .systemBackground)
@@ -27,7 +29,6 @@ struct WorkoutScreen: View {
                         selectionCard
                         autoTargetsCard(entry: entry, liftState: liftState)
                         engineInsightsCard(entry: entry, liftState: liftState)
-                        variationCard(entry: entry, draft: draft, isFinished: model.isCurrentWorkoutFinished)
                         setActionsCard(isFinished: model.isCurrentWorkoutFinished)
                         workoutLogCard(draft: draft, isFinished: model.isCurrentWorkoutFinished)
                         finishWorkoutCard(entry: entry, liftState: liftState, isFinished: model.isCurrentWorkoutFinished)
@@ -92,49 +93,55 @@ struct WorkoutScreen: View {
 
     private var restTimerCard: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Rest Timer")
-                .font(.headline)
+            collapsibleHeader(
+                title: "Rest Timer",
+                subtitle: durationText(seconds: model.lastUsedRestDurationSeconds),
+                isCollapsed: isRestTimerCollapsed,
+                toggle: { isRestTimerCollapsed.toggle() }
+            )
 
-            metricBlock(title: "Saved Default", value: durationText(seconds: model.lastUsedRestDurationSeconds))
+            if !isRestTimerCollapsed {
+                metricBlock(title: "Saved Default", value: durationText(seconds: model.lastUsedRestDurationSeconds))
 
-            HStack {
-                restPresetButton(minutes: 2)
-                restPresetButton(minutes: 3)
-                restPresetButton(minutes: 5)
+                HStack {
+                    restPresetButton(minutes: 2)
+                    restPresetButton(minutes: 3)
+                    restPresetButton(minutes: 5)
+                }
+
+                HStack(alignment: .bottom, spacing: 12) {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Custom Minutes")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        TextField("Minutes", text: Binding(
+                            get: { customRestMinutesText },
+                            set: { newValue in
+                                customRestMinutesText = newValue.filter(\.isNumber)
+                            }
+                        ))
+                        .textFieldStyle(.roundedBorder)
+                        .keyboardType(.numberPad)
+                        .focused($focusedField, equals: .customRestMinutes)
+                    }
+
+                    Button("Save") {
+                        saveCustomRestDuration()
+                    }
+                    .buttonStyle(.bordered)
+
+                    Button("Start") {
+                        focusedField = nil
+                        presentRestTimer(seconds: model.lastUsedRestDurationSeconds)
+                    }
+                    .buttonStyle(.borderedProminent)
+                }
+
+                Toggle("Automatically start timer on workout completion", isOn: Binding(
+                    get: { model.autoStartRestTimerOnCompletion },
+                    set: { model.updateAutoStartRestTimerOnCompletion($0) }
+                ))
             }
-
-            HStack(alignment: .bottom, spacing: 12) {
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("Custom Minutes")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    TextField("Minutes", text: Binding(
-                        get: { customRestMinutesText },
-                        set: { newValue in
-                            customRestMinutesText = newValue.filter(\.isNumber)
-                        }
-                    ))
-                    .textFieldStyle(.roundedBorder)
-                    .keyboardType(.numberPad)
-                    .focused($focusedField, equals: .customRestMinutes)
-                }
-
-                Button("Save") {
-                    saveCustomRestDuration()
-                }
-                .buttonStyle(.bordered)
-
-                Button("Start") {
-                    focusedField = nil
-                    presentRestTimer(seconds: model.lastUsedRestDurationSeconds)
-                }
-                .buttonStyle(.borderedProminent)
-            }
-
-            Toggle("Automatically start timer on workout completion", isOn: Binding(
-                get: { model.autoStartRestTimerOnCompletion },
-                set: { model.updateAutoStartRestTimerOnCompletion($0) }
-            ))
         }
         .padding()
         .background(cardBackground, in: RoundedRectangle(cornerRadius: 18))
@@ -318,36 +325,6 @@ struct WorkoutScreen: View {
         .background(cardBackground, in: RoundedRectangle(cornerRadius: 18))
     }
 
-    private func variationCard(entry: ProgramEntry, draft: SessionDraft, isFinished: Bool) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("Variation")
-                .font(.headline)
-
-            Picker("Accessory", selection: Binding(
-                get: { draft.selectedVariation.profileName },
-                set: { model.updateVariation($0) }
-            )) {
-                ForEach(ProgramDefinition.variationNames(for: entry.primaryLift), id: \.self) { option in
-                    Text(option).tag(option)
-                }
-            }
-            .disabled(isFinished)
-
-            if let profile = ProgramDefinition.variationProfile(named: draft.selectedVariation.profileName, for: entry.primaryLift) {
-                Text(profile.helperText ?? "Variation defaults are seeded from the day’s working target and can still be edited set by set.")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-            }
-
-            Text("This selection is kept with the session draft and can later feed variation-impact analytics.")
-                .font(.footnote)
-                .foregroundStyle(.secondary)
-        }
-        .padding()
-        .background(cardBackground, in: RoundedRectangle(cornerRadius: 18))
-        .opacity(isFinished ? 0.7 : 1)
-    }
-
     private func setActionsCard(isFinished: Bool) -> some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Add Sets")
@@ -371,26 +348,47 @@ struct WorkoutScreen: View {
             Text("Workout Log")
                 .font(.headline)
 
-            ForEach(draft.sets.sortedForDisplay()) { set in
-                WorkoutSetRow(
-                    set: set,
-                    isWorkoutFinished: isFinished,
-                    onPresentNumericInput: { input in
-                        activeNumericInput = input
-                    },
-                    onChange: { updatedSet, didCompleteNow in
-                        model.updateSet(set.id) { current in
-                            current = updatedSet
+            ForEach(visibleSetTypes(for: draft), id: \.self) { setType in
+                let sectionSets = draft.sets.sortedForDisplay().filter { $0.setType == setType }
+
+                VStack(alignment: .leading, spacing: 12) {
+                    collapsibleHeader(
+                        title: setType.displayName,
+                        subtitle: "\(sectionSets.count) set\(sectionSets.count == 1 ? "" : "s")",
+                        isCollapsed: collapsedSections.contains(setType),
+                        toggle: { toggleSection(setType) }
+                    )
+
+                    if !collapsedSections.contains(setType) {
+                        ForEach(sectionSets) { set in
+                            WorkoutSetRow(
+                                set: set,
+                                variationOptions: ProgramDefinition.variationNames(for: draft.programEntry.primaryLift),
+                                isWorkoutFinished: isFinished,
+                                onPresentNumericInput: { input in
+                                    activeNumericInput = input
+                                },
+                                onVariationChange: { profileName in
+                                    model.updateVariation(for: set.id, to: profileName)
+                                },
+                                onChange: { updatedSet, didCompleteNow in
+                                    model.updateSet(set.id) { current in
+                                        current = updatedSet
+                                    }
+                                    if didCompleteNow, model.autoStartRestTimerOnCompletion {
+                                        focusedField = nil
+                                        presentRestTimer(seconds: model.lastUsedRestDurationSeconds)
+                                    }
+                                },
+                                onDelete: {
+                                    model.removeSet(set.id)
+                                }
+                            )
                         }
-                        if didCompleteNow, model.autoStartRestTimerOnCompletion {
-                            focusedField = nil
-                            presentRestTimer(seconds: model.lastUsedRestDurationSeconds)
-                        }
-                    },
-                    onDelete: {
-                        model.removeSet(set.id)
                     }
-                )
+                }
+                .padding()
+                .background(insetBackground, in: RoundedRectangle(cornerRadius: 16))
             }
 
             if let summary = model.currentSummary {
@@ -492,6 +490,30 @@ struct WorkoutScreen: View {
         "\(compactRPE(actual))/\(compactRPE(expected))"
     }
 
+    private func collapsibleHeader(title: String, subtitle: String? = nil, isCollapsed: Bool, toggle: @escaping () -> Void) -> some View {
+        Button(action: toggle) {
+            HStack(spacing: 12) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(title)
+                        .font(.headline)
+
+                    if let subtitle, !subtitle.isEmpty {
+                        Text(subtitle)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+
+                Spacer()
+
+                Image(systemName: isCollapsed ? "chevron.down" : "chevron.up")
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .buttonStyle(.plain)
+    }
+
     private func percentString(from value: Double) -> String {
         let percent = value * 100
         if percent > 0 {
@@ -558,6 +580,20 @@ struct WorkoutScreen: View {
     private var weekPages: [[Int]] {
         stride(from: 0, to: model.weeks.count, by: 3).map { start in
             Array(model.weeks[start..<min(start + 3, model.weeks.count)])
+        }
+    }
+
+    private func visibleSetTypes(for draft: SessionDraft) -> [WorkoutSetType] {
+        WorkoutSetType.allCases.filter { setType in
+            draft.sets.contains { $0.setType == setType }
+        }
+    }
+
+    private func toggleSection(_ setType: WorkoutSetType) {
+        if collapsedSections.contains(setType) {
+            collapsedSections.remove(setType)
+        } else {
+            collapsedSections.insert(setType)
         }
     }
 
@@ -826,8 +862,10 @@ private struct CompletionSummarySheet: View {
 
 private struct WorkoutSetRow: View {
     let set: WorkoutSet
+    let variationOptions: [String]
     let isWorkoutFinished: Bool
     let onPresentNumericInput: (WorkoutNumericInput) -> Void
+    let onVariationChange: (String) -> Void
     let onChange: (WorkoutSet, Bool) -> Void
     let onDelete: () -> Void
 
@@ -851,7 +889,11 @@ private struct WorkoutSetRow: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
 
-                lockedValue(set.exerciseName)
+                if set.setType == .variation, !variationOptions.isEmpty, !isLocked {
+                    variationMenu
+                } else {
+                    lockedValue(set.exerciseName)
+                }
             }
 
             HStack {
@@ -975,6 +1017,12 @@ private struct WorkoutSetRow: View {
     @ViewBuilder
     private var variationDetails: some View {
         VStack(alignment: .leading, spacing: 10) {
+            if let helperText = ProgramDefinition.variationProfile(named: set.variationProfileName ?? set.exerciseName)?.helperText {
+                Label(helperText, systemImage: "info.circle")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
+
             if let chainUnitWeightPerSide = set.chainUnitWeightPerSide {
                 HStack {
                     labeledField(title: "Chains / Side", readOnlyValue: "\(set.chainCountPerSide)") {
@@ -1019,6 +1067,31 @@ private struct WorkoutSetRow: View {
             return String(format: "%.1f", weight)
         }
         return "--"
+    }
+
+    private var variationMenu: some View {
+        Menu {
+            ForEach(variationOptions, id: \.self) { option in
+                Button(option) {
+                    onVariationChange(option)
+                }
+            }
+        } label: {
+            HStack {
+                Text(set.exerciseName)
+                    .lineLimit(1)
+                Spacer()
+                Image(systemName: "chevron.up.chevron.down")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 10)
+            .background(Color(uiColor: .secondarySystemBackground), in: RoundedRectangle(cornerRadius: 8))
+            .foregroundStyle(.primary)
+        }
+        .disabled(isLocked)
     }
 
     private func metricDetail(title: String, value: String) -> some View {
