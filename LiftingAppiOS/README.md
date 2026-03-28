@@ -30,6 +30,7 @@ The current engine is intentionally RPE-driven.
 6. Skipped sets by themselves do not trigger deload logic.
 7. Missing RPE data keeps the engine neutral instead of auto-deloading.
 8. Backoff work is only auto-skipped when actual recorded effort is high enough to justify it.
+9. e1RM tracking is derived from completed working sets only, not warmups, ramps, backoff sets, or variations.
 
 ## Variation loading
 
@@ -77,6 +78,7 @@ Deload days now generate real working sets instead of `0x0`.
 - The workout screen uses button-based day selection and a paged week selector instead of dropdowns
 - The week selector shows `WK1`, `WK2`, etc. and pages three weeks at a time
 - Program start date is edited only from the Program tab, not from the Workout screen
+- Program start date stays fixed once set; “today-aware” workout auto-selection only runs the first time the user enters the Workout tab in a given app session
 
 ## Rest timer behavior
 

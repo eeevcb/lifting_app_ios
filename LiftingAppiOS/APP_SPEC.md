@@ -188,6 +188,7 @@ The progression engine:
 5. decides `Progression`, `Reduce`, or `Deload`
 6. may skip backoff work if recorded fatigue is high enough
 7. updates training max, estimated 1RM, fatigue score, and future targets
+8. derives displayed e1RM values from completed working sets only
 
 Safety rules:
 
@@ -226,6 +227,7 @@ Persistence is file-backed JSON with migration support from earlier snapshot for
 - Day selection should use buttons instead of a dropdown
 - Week selection should use 3-at-a-time paged buttons with arrows and swipe
 - Week labels should render as `WK1`, `WK2`, and so on
+- Program start date should remain fixed once chosen; today-aware workout auto-selection should only run the first time the user enters the Workout tab in an app session
 - Preset buttons update the saved default
 - Custom timer entry updates the saved default after tapping `Save`
 - Marking a set completed can auto-start the timer when the user preference is enabled

@@ -3,7 +3,7 @@ import Observation
 
 @Observable
 final class AppModel {
-    var selectedTab: AppTab = .workout
+    var selectedTab: AppTab = .program
     var programStartDate: Date
     var selectedWeek: Int
     var selectedDay: TrainingDay
@@ -46,7 +46,6 @@ final class AppModel {
 
         lastCompletionSummary = nil
         activeRun.programStartDate = programStartDate
-        autoSelectTodayIfNeeded()
         ensureDraftForSelection()
     }
 
@@ -93,9 +92,12 @@ final class AppModel {
         guard let draft = currentDraft else { return nil }
         return SessionSummary(
             totalVolume: draft.sets.reduce(0) { $0 + $1.volumeContribution },
-            bestEstimatedOneRepMax: draft.sets.compactMap { set in
-                WorkoutEngine.estimateOneRepMax(weight: set.totalDisplayedLoad > 0 ? set.totalDisplayedLoad : nil, reps: set.reps)
-            }.max(),
+            bestEstimatedOneRepMax: draft.sets
+                .filter { $0.setType == .topSet && !$0.skipped }
+                .compactMap { set in
+                    WorkoutEngine.estimateOneRepMax(weight: set.totalDisplayedLoad > 0 ? set.totalDisplayedLoad : nil, reps: set.reps)
+                }
+                .max(),
             completedSetCount: draft.sets.filter { $0.completed && !$0.skipped }.count,
             variationUsed: actualVariationName(from: draft.sets, fallback: draft.selectedVariation.profileName)
         )
@@ -302,7 +304,6 @@ final class AppModel {
         programStartDate = Calendar.current.startOfDay(for: date)
         activeRun.programStartDate = programStartDate
         lastAutoSelectedDate = nil
-        autoSelectTodayIfNeeded()
         persist()
     }
 

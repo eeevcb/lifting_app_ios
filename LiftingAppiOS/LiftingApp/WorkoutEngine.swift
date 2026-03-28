@@ -377,7 +377,7 @@ enum WorkoutEngine {
     private static func makeSummary(for draft: SessionDraft) -> SessionSummary {
         let sortedSets = draft.sets.sortedForDisplay()
         let bestEstimatedOneRepMax = sortedSets
-            .filter { !$0.skipped }
+            .filter { $0.setType == .topSet && $0.completed && !$0.skipped }
             .compactMap { estimateOneRepMax(weight: $0.totalDisplayedLoad > 0 ? $0.totalDisplayedLoad : nil, reps: $0.reps) }
             .max()
 

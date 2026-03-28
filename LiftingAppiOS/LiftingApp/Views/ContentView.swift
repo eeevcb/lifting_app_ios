@@ -2,6 +2,7 @@ import SwiftUI
 
 struct ContentView: View {
     @Environment(AppModel.self) private var model
+    @State private var hasTriggeredInitialWorkoutAutoSelection = false
 
     var body: some View {
         @Bindable var model = model
@@ -40,7 +41,15 @@ struct ContentView: View {
             .tag(AppTab.archive)
         }
         .onAppear {
+            if model.selectedTab == .workout, !hasTriggeredInitialWorkoutAutoSelection {
+                model.refreshTodaySelectionIfNeeded()
+                hasTriggeredInitialWorkoutAutoSelection = true
+            }
+        }
+        .onChange(of: model.selectedTab) { _, selectedTab in
+            guard selectedTab == .workout, !hasTriggeredInitialWorkoutAutoSelection else { return }
             model.refreshTodaySelectionIfNeeded()
+            hasTriggeredInitialWorkoutAutoSelection = true
         }
     }
 }
