@@ -337,7 +337,7 @@ private struct ArchiveRunDetailScreen: View {
         case .hold:
             .green
         case .reduce:
-            .orange
+            .yellow
         case .deload:
             .red
         }

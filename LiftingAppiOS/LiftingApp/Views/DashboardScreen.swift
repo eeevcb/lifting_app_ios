@@ -270,7 +270,7 @@ struct DashboardScreen: View {
         case .hold:
             .green
         case .reduce:
-            .orange
+            .yellow
         case .deload:
             .red
         }

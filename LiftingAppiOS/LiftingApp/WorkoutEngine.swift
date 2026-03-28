@@ -15,14 +15,14 @@ enum WorkoutEngine {
         ]
     ]
 
-    static func makeDraft(for entry: ProgramEntry, liftState: LiftState, variation: VariationSelection?) -> SessionDraft {
+    static func makeDraft(for entry: ProgramEntry, liftState: LiftState, variation: VariationSelection?, targetAdjustmentPercent: Double = 0) -> SessionDraft {
         let chosenVariation = variation ?? ProgramDefinition.defaultVariationSelection(for: entry.primaryLift)
-        let sets = initialSets(for: entry, liftState: liftState, variation: chosenVariation)
-        return SessionDraft(programEntry: entry, selectedVariation: chosenVariation, sets: sets)
+        let sets = initialSets(for: entry, liftState: liftState, variation: chosenVariation, targetAdjustmentPercent: targetAdjustmentPercent)
+        return SessionDraft(programEntry: entry, selectedVariation: chosenVariation, appliedTargetAdjustmentPercent: targetAdjustmentPercent, sets: sets)
     }
 
-    static func initialSets(for entry: ProgramEntry, liftState: LiftState, variation: VariationSelection) -> [WorkoutSet] {
-        let topWeight = targetWeight(for: entry, liftState: liftState)
+    static func initialSets(for entry: ProgramEntry, liftState: LiftState, variation: VariationSelection, targetAdjustmentPercent: Double = 0) -> [WorkoutSet] {
+        let topWeight = targetWeight(for: entry, liftState: liftState, targetAdjustmentPercent: targetAdjustmentPercent)
         let warmups = warmupScheme(for: entry.primaryLift, topWeight: topWeight, plannedReps: entry.reps, plannedType: entry.plannedType)
 
         var sets: [WorkoutSet] = warmups.enumerated().map { index, scheme in
@@ -72,7 +72,7 @@ enum WorkoutEngine {
     static func addSet(to draft: SessionDraft, setType: WorkoutSetType, liftState: LiftState) -> SessionDraft {
         var updatedDraft = draft
         let plan = draft.programEntry
-        let topWeight = targetWeight(for: plan, liftState: liftState)
+        let topWeight = targetWeight(for: plan, liftState: liftState, targetAdjustmentPercent: draft.appliedTargetAdjustmentPercent)
         let matchingSetCount = draft.sets.filter { $0.setType == setType }.count
 
         switch setType {
@@ -127,7 +127,7 @@ enum WorkoutEngine {
         let adjustedDraft = applyBackoffDecision(to: draft, fatigue: fatigue)
         let summary = makeSummary(for: adjustedDraft)
         let updatedState = updateLiftState(from: liftState, draft: adjustedDraft, fatigue: fatigue, summary: summary, performedOn: date)
-        let nextTarget = targetWeight(for: draft.programEntry, liftState: updatedState)
+        let nextTarget = targetWeight(for: draft.programEntry, liftState: updatedState, targetAdjustmentPercent: updatedState.pendingTargetAdjustmentPercent)
 
         let completed = CompletedSession(
             id: draft.id,
@@ -158,9 +158,9 @@ enum WorkoutEngine {
         )
     }
 
-    static func targetWeight(for entry: ProgramEntry, liftState: LiftState) -> Double {
+    static func targetWeight(for entry: ProgramEntry, liftState: LiftState, targetAdjustmentPercent: Double = 0) -> Double {
         let effectiveOneRepMax = min(liftState.estimatedOneRepMax, liftState.trainingMax / 0.95)
-        let adjustedPercent = max(0.82, 1 + liftState.lastTargetAdjustmentPercent)
+        let adjustedPercent = max(0.82, 1 + targetAdjustmentPercent)
         return roundToIncrement(effectiveOneRepMax * targetPercent(for: entry) * adjustedPercent)
     }
 
@@ -246,7 +246,7 @@ enum WorkoutEngine {
     }
 
     private static func defaultVariationSet(for entry: ProgramEntry, liftState: LiftState, selection: VariationSelection, setOrder: Int) -> WorkoutSet {
-        let topWeight = targetWeight(for: entry, liftState: liftState)
+        let topWeight = targetWeight(for: entry, liftState: liftState, targetAdjustmentPercent: 0)
         guard let profile = ProgramDefinition.variationProfile(named: selection.profileName, for: entry.primaryLift) else {
             return WorkoutSet(
                 setOrder: setOrder,
@@ -508,6 +508,7 @@ enum WorkoutEngine {
         updated.lastGoodWorkingWeight = topWeight ?? current.lastGoodWorkingWeight
         updated.lastRecommendation = fatigue.recommendation
         updated.lastTargetAdjustmentPercent = fatigue.targetAdjustmentPercent
+        updated.pendingTargetAdjustmentPercent = fatigue.targetAdjustmentPercent
         updated.fatigueScore = min(10, max(0, (current.fatigueScore * 0.55) + max(0, fatigue.effortDelta) * 2 + max(0, fatigue.topSetFatigue) * 1.25))
         if fatigue.recommendation == .hold {
             updated.trainingMax = roundToIncrement(max(45, current.trainingMax * 0.9 + targetTrainingMax * 0.1 + (fatigue.targetAdjustmentPercent > 0 ? 2.5 : 0)))

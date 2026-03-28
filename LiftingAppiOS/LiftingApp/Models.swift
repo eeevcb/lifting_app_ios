@@ -298,27 +298,85 @@ struct LiftState: Codable, Hashable {
     var lastSuccessfulSessionDate: Date?
     var lastRecommendation: EngineRecommendation
     var lastTargetAdjustmentPercent: Double
+    var pendingTargetAdjustmentPercent: Double
 
     static let defaults: [LiftType: LiftState] = [
-        .squat: LiftState(trainingMax: 300, estimatedOneRepMax: 315, lastGoodWorkingWeight: nil, fatigueScore: 0, lastSuccessfulSessionDate: nil, lastRecommendation: .hold, lastTargetAdjustmentPercent: 0),
-        .bench: LiftState(trainingMax: 215, estimatedOneRepMax: 225, lastGoodWorkingWeight: nil, fatigueScore: 0, lastSuccessfulSessionDate: nil, lastRecommendation: .hold, lastTargetAdjustmentPercent: 0),
-        .deadlift: LiftState(trainingMax: 385, estimatedOneRepMax: 405, lastGoodWorkingWeight: nil, fatigueScore: 0, lastSuccessfulSessionDate: nil, lastRecommendation: .hold, lastTargetAdjustmentPercent: 0),
-        .shoulderPress: LiftState(trainingMax: 125, estimatedOneRepMax: 135, lastGoodWorkingWeight: nil, fatigueScore: 0, lastSuccessfulSessionDate: nil, lastRecommendation: .hold, lastTargetAdjustmentPercent: 0),
-        .barbellRow: LiftState(trainingMax: 185, estimatedOneRepMax: 195, lastGoodWorkingWeight: nil, fatigueScore: 0, lastSuccessfulSessionDate: nil, lastRecommendation: .hold, lastTargetAdjustmentPercent: 0)
+        .squat: LiftState(trainingMax: 300, estimatedOneRepMax: 315, lastGoodWorkingWeight: nil, fatigueScore: 0, lastSuccessfulSessionDate: nil, lastRecommendation: .hold, lastTargetAdjustmentPercent: 0, pendingTargetAdjustmentPercent: 0),
+        .bench: LiftState(trainingMax: 215, estimatedOneRepMax: 225, lastGoodWorkingWeight: nil, fatigueScore: 0, lastSuccessfulSessionDate: nil, lastRecommendation: .hold, lastTargetAdjustmentPercent: 0, pendingTargetAdjustmentPercent: 0),
+        .deadlift: LiftState(trainingMax: 385, estimatedOneRepMax: 405, lastGoodWorkingWeight: nil, fatigueScore: 0, lastSuccessfulSessionDate: nil, lastRecommendation: .hold, lastTargetAdjustmentPercent: 0, pendingTargetAdjustmentPercent: 0),
+        .shoulderPress: LiftState(trainingMax: 125, estimatedOneRepMax: 135, lastGoodWorkingWeight: nil, fatigueScore: 0, lastSuccessfulSessionDate: nil, lastRecommendation: .hold, lastTargetAdjustmentPercent: 0, pendingTargetAdjustmentPercent: 0),
+        .barbellRow: LiftState(trainingMax: 185, estimatedOneRepMax: 195, lastGoodWorkingWeight: nil, fatigueScore: 0, lastSuccessfulSessionDate: nil, lastRecommendation: .hold, lastTargetAdjustmentPercent: 0, pendingTargetAdjustmentPercent: 0)
     ]
+
+    init(
+        trainingMax: Double,
+        estimatedOneRepMax: Double,
+        lastGoodWorkingWeight: Double?,
+        fatigueScore: Double,
+        lastSuccessfulSessionDate: Date?,
+        lastRecommendation: EngineRecommendation,
+        lastTargetAdjustmentPercent: Double,
+        pendingTargetAdjustmentPercent: Double
+    ) {
+        self.trainingMax = trainingMax
+        self.estimatedOneRepMax = estimatedOneRepMax
+        self.lastGoodWorkingWeight = lastGoodWorkingWeight
+        self.fatigueScore = fatigueScore
+        self.lastSuccessfulSessionDate = lastSuccessfulSessionDate
+        self.lastRecommendation = lastRecommendation
+        self.lastTargetAdjustmentPercent = lastTargetAdjustmentPercent
+        self.pendingTargetAdjustmentPercent = pendingTargetAdjustmentPercent
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        trainingMax = try container.decode(Double.self, forKey: .trainingMax)
+        estimatedOneRepMax = try container.decode(Double.self, forKey: .estimatedOneRepMax)
+        lastGoodWorkingWeight = try container.decodeIfPresent(Double.self, forKey: .lastGoodWorkingWeight)
+        fatigueScore = try container.decode(Double.self, forKey: .fatigueScore)
+        lastSuccessfulSessionDate = try container.decodeIfPresent(Date.self, forKey: .lastSuccessfulSessionDate)
+        lastRecommendation = try container.decode(EngineRecommendation.self, forKey: .lastRecommendation)
+        lastTargetAdjustmentPercent = try container.decodeIfPresent(Double.self, forKey: .lastTargetAdjustmentPercent) ?? 0
+        pendingTargetAdjustmentPercent = try container.decodeIfPresent(Double.self, forKey: .pendingTargetAdjustmentPercent) ?? lastTargetAdjustmentPercent
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(trainingMax, forKey: .trainingMax)
+        try container.encode(estimatedOneRepMax, forKey: .estimatedOneRepMax)
+        try container.encodeIfPresent(lastGoodWorkingWeight, forKey: .lastGoodWorkingWeight)
+        try container.encode(fatigueScore, forKey: .fatigueScore)
+        try container.encodeIfPresent(lastSuccessfulSessionDate, forKey: .lastSuccessfulSessionDate)
+        try container.encode(lastRecommendation, forKey: .lastRecommendation)
+        try container.encode(lastTargetAdjustmentPercent, forKey: .lastTargetAdjustmentPercent)
+        try container.encode(pendingTargetAdjustmentPercent, forKey: .pendingTargetAdjustmentPercent)
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case trainingMax
+        case estimatedOneRepMax
+        case lastGoodWorkingWeight
+        case fatigueScore
+        case lastSuccessfulSessionDate
+        case lastRecommendation
+        case lastTargetAdjustmentPercent
+        case pendingTargetAdjustmentPercent
+    }
 }
 
 struct SessionDraft: Identifiable, Codable, Hashable {
     let id: UUID
     let programEntry: ProgramEntry
     var selectedVariation: VariationSelection
+    var appliedTargetAdjustmentPercent: Double
     var sets: [WorkoutSet]
     var generatedAt: Date
 
-    init(id: UUID = UUID(), programEntry: ProgramEntry, selectedVariation: VariationSelection, sets: [WorkoutSet], generatedAt: Date = .now) {
+    init(id: UUID = UUID(), programEntry: ProgramEntry, selectedVariation: VariationSelection, appliedTargetAdjustmentPercent: Double = 0, sets: [WorkoutSet], generatedAt: Date = .now) {
         self.id = id
         self.programEntry = programEntry
         self.selectedVariation = selectedVariation
+        self.appliedTargetAdjustmentPercent = appliedTargetAdjustmentPercent
         self.sets = sets
         self.generatedAt = generatedAt
     }
@@ -333,6 +391,7 @@ struct SessionDraft: Identifiable, Codable, Hashable {
             let legacyVariation = try container.decode(String.self, forKey: .selectedVariation)
             selectedVariation = VariationSelection(profileName: legacyVariation)
         }
+        appliedTargetAdjustmentPercent = try container.decodeIfPresent(Double.self, forKey: .appliedTargetAdjustmentPercent) ?? 0
         sets = try container.decode([WorkoutSet].self, forKey: .sets)
         generatedAt = try container.decodeIfPresent(Date.self, forKey: .generatedAt) ?? .now
     }
@@ -342,6 +401,7 @@ struct SessionDraft: Identifiable, Codable, Hashable {
         try container.encode(id, forKey: .id)
         try container.encode(programEntry, forKey: .programEntry)
         try container.encode(selectedVariation, forKey: .selectedVariation)
+        try container.encode(appliedTargetAdjustmentPercent, forKey: .appliedTargetAdjustmentPercent)
         try container.encode(sets, forKey: .sets)
         try container.encode(generatedAt, forKey: .generatedAt)
     }
@@ -350,6 +410,7 @@ struct SessionDraft: Identifiable, Codable, Hashable {
         case id
         case programEntry
         case selectedVariation
+        case appliedTargetAdjustmentPercent
         case sets
         case generatedAt
     }

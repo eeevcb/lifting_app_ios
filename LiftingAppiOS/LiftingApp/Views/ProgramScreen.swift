@@ -89,8 +89,8 @@ private struct ProgramRow: View {
                             .font(.caption.weight(.semibold))
                             .padding(.horizontal, 10)
                             .padding(.vertical, 6)
-                            .background(.green.opacity(0.15), in: Capsule())
-                            .foregroundStyle(.green)
+                            .background(statusColor(for: completedSession.fatigue.recommendation).opacity(0.15), in: Capsule())
+                            .foregroundStyle(statusColor(for: completedSession.fatigue.recommendation))
                     }
                 }
 
@@ -107,6 +107,17 @@ private struct ProgramRow: View {
             .padding(.vertical, 6)
         }
         .buttonStyle(.plain)
+    }
+
+    private func statusColor(for recommendation: EngineRecommendation) -> Color {
+        switch recommendation {
+        case .hold:
+            .green
+        case .reduce:
+            .yellow
+        case .deload:
+            .red
+        }
     }
 }
 

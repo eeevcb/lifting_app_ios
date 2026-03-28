@@ -104,8 +104,11 @@ final class AppModel {
     }
 
     var currentTargetWeight: Double? {
-        guard let entry = currentEntry, let liftState = currentLiftState else { return nil }
-        let target = WorkoutEngine.targetWeight(for: entry, liftState: liftState)
+        guard let draft = currentDraft else { return nil }
+        let target = draft.sets
+            .filter { $0.setType == .topSet }
+            .compactMap(\.weight)
+            .max() ?? 0
         return target == 0 ? nil : target
     }
 
@@ -402,6 +405,7 @@ final class AppModel {
             id: draft.id,
             programEntry: draft.programEntry,
             selectedVariation: draft.selectedVariation,
+            appliedTargetAdjustmentPercent: draft.appliedTargetAdjustmentPercent,
             sets: result.completedSession.sets,
             generatedAt: .now
         )
@@ -498,7 +502,7 @@ final class AppModel {
         guard let entry = currentEntry else { return }
         if drafts[entry.key] == nil {
             let liftState = liftStates[entry.primaryLift] ?? LiftState.defaults[entry.primaryLift]!
-            drafts[entry.key] = WorkoutEngine.makeDraft(for: entry, liftState: liftState, variation: nil)
+            drafts[entry.key] = makeDraft(for: entry, liftState: liftState, variation: nil)
         }
         persist()
     }
@@ -527,11 +531,7 @@ final class AppModel {
             guard isAfter(draft.programEntry, completedEntry) else { continue }
             guard completedSession(for: draft.programEntry) == nil else { continue }
 
-            drafts[key] = WorkoutEngine.makeDraft(
-                for: draft.programEntry,
-                liftState: liftState,
-                variation: draft.selectedVariation
-            )
+            drafts[key] = makeDraft(for: draft.programEntry, liftState: liftState, variation: draft.selectedVariation)
         }
     }
 
@@ -566,12 +566,13 @@ final class AppModel {
         for entry in ProgramDefinition.programDays where entry.primaryLift == lift {
             guard completedSession(for: entry) == nil else { continue }
             if var existingDraft = drafts[entry.key] {
-                let regeneratedDraft = WorkoutEngine.makeDraft(for: entry, liftState: liftState, variation: existingDraft.selectedVariation)
+                let regeneratedDraft = makeDraft(for: entry, liftState: liftState, variation: existingDraft.selectedVariation)
                 existingDraft.sets = mergePreservingCompletedSets(existing: existingDraft.sets, regenerated: regeneratedDraft.sets)
+                existingDraft.appliedTargetAdjustmentPercent = regeneratedDraft.appliedTargetAdjustmentPercent
                 existingDraft.generatedAt = regeneratedDraft.generatedAt
                 drafts[entry.key] = existingDraft
             } else {
-                drafts[entry.key] = WorkoutEngine.makeDraft(for: entry, liftState: liftState, variation: nil)
+                drafts[entry.key] = makeDraft(for: entry, liftState: liftState, variation: nil)
             }
         }
     }
@@ -680,7 +681,7 @@ final class AppModel {
             guard completedSession(for: entry) == nil else { continue }
             let liftState = liftStates[entry.primaryLift] ?? LiftState.defaults[entry.primaryLift]!
             let selection = existingSelections[entry.key]
-            rebuiltDrafts[entry.key] = WorkoutEngine.makeDraft(for: entry, liftState: liftState, variation: selection)
+            rebuiltDrafts[entry.key] = makeDraft(for: entry, liftState: liftState, variation: selection)
         }
 
         drafts = rebuiltDrafts
@@ -688,9 +689,32 @@ final class AppModel {
             id: UUID(),
             programEntry: reopenedEntry,
             selectedVariation: reopenedSelection,
+            appliedTargetAdjustmentPercent: reopenedSession.fatigue.targetAdjustmentPercent,
             sets: reopenedSession.sets,
             generatedAt: .now
         )
+    }
+
+    private func makeDraft(for entry: ProgramEntry, liftState: LiftState, variation: VariationSelection?) -> SessionDraft {
+        let adjustmentPercent = pendingTargetAdjustmentPercent(for: entry, liftState: liftState)
+        return WorkoutEngine.makeDraft(
+            for: entry,
+            liftState: liftState,
+            variation: variation,
+            targetAdjustmentPercent: adjustmentPercent
+        )
+    }
+
+    private func pendingTargetAdjustmentPercent(for entry: ProgramEntry, liftState: LiftState) -> Double {
+        let pendingAdjustment = liftState.pendingTargetAdjustmentPercent
+        guard pendingAdjustment != 0 else { return 0 }
+
+        let firstUnfinishedEntry = ProgramDefinition.programDays.first { candidate in
+            candidate.primaryLift == entry.primaryLift && completedSession(for: candidate) == nil
+        }
+
+        guard firstUnfinishedEntry?.key == entry.key else { return 0 }
+        return pendingAdjustment
     }
 
     private func actualVariationName(from sets: [WorkoutSet], fallback: String?) -> String? {

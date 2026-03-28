@@ -247,7 +247,7 @@ struct WorkoutScreen: View {
 
             HStack {
                 metricBlock(title: "Fatigue", value: String(format: "%.1f", liftState.fatigueScore))
-                metricBlock(title: "Progression", value: liftState.lastRecommendation.displayName)
+                metricBlock(title: "Engine Status", value: liftState.lastRecommendation.displayName)
             }
 
             HStack {
