@@ -613,6 +613,12 @@ struct WorkoutScreen: View {
         return String(format: "%d:%02d", minutes, remainingSeconds)
     }
 
+    private func backoffStatus(for session: CompletedSession) -> String {
+        let backoffSets = session.sets.filter { $0.setType == .backoff }
+        guard !backoffSets.isEmpty else { return "N/A" }
+        return backoffSets.contains(where: \.skipped) ? "Skipped" : "Kept"
+    }
+
     private func compactRPE(_ value: Double) -> String {
         if value.rounded() == value {
             return String(Int(value))
