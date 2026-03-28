@@ -77,8 +77,8 @@ enum ProgramDefinition {
         .shoulderPress: [
             VariationProfile(name: "Landmine Press", lift: .shoulderPress, loadingMode: .primaryLiftTargetMultiplier(0.75), defaultRelativeLoad: 0.75, helperText: "Defaults to 75% of the day’s press working target."),
             VariationProfile(name: "Pull Ups", lift: .shoulderPress, loadingMode: .externalLoadOnly, defaultRelativeLoad: 0, helperText: "Defaults to 0 added load. Add weight only if using a belt."),
-            VariationProfile(name: "Barbell Curl", lift: .shoulderPress, loadingMode: .primaryLiftTargetMultiplier(0.35), defaultRelativeLoad: 0.35, helperText: "Defaults to 35% of the day’s press working target."),
-            VariationProfile(name: "Skull Crushers", lift: .shoulderPress, loadingMode: .primaryLiftTargetMultiplier(0.40), defaultRelativeLoad: 0.40, helperText: "Defaults to 40% of the day’s press working target."),
+            VariationProfile(name: "Barbell Curl", lift: .shoulderPress, loadingMode: .referenceLiftEstimatedOneRepMax(referenceLift: .bench, multiplier: 0.30), defaultRelativeLoad: 0.30, helperText: "Defaults to 30% of current Bench estimated 1RM."),
+            VariationProfile(name: "Skull Crushers", lift: .shoulderPress, loadingMode: .referenceLiftEstimatedOneRepMax(referenceLift: .bench, multiplier: 0.30), defaultRelativeLoad: 0.30, helperText: "Defaults to 30% of current Bench estimated 1RM."),
             VariationProfile(name: "Shrugs", lift: .shoulderPress, loadingMode: .primaryLiftTargetMultiplier(1.25), defaultRelativeLoad: 1.25, helperText: "Defaults to 125% of the day’s press working target.")
         ]
     ]
@@ -118,8 +118,31 @@ enum ProgramDefinition {
         switch profile.loadingMode {
         case .basePlusChains:
             return VariationSelection(profileName: profile.name, chainCountPerSide: 1)
-        case .externalLoadOnly, .primaryLiftTargetMultiplier:
+        case .externalLoadOnly, .primaryLiftTargetMultiplier, .referenceLiftEstimatedOneRepMax:
             return VariationSelection(profileName: profile.name, chainCountPerSide: 0)
+        }
+    }
+
+    static func recommendedVariationName(for lift: LiftType, stickingPoint: StickingPoint) -> String? {
+        switch (lift, stickingPoint) {
+        case (.squat, .bottom):
+            "Box Squat"
+        case (.squat, .mid), (.squat, .top):
+            "Safety Bar Squat"
+        case (.bench, .bottom):
+            "Incline Bench"
+        case (.bench, .mid):
+            "Bench Press with Blocks"
+        case (.bench, .top):
+            "Bench Press with Chains"
+        case (.deadlift, .bottom):
+            "Deficit Deadlift"
+        case (.deadlift, .mid):
+            "Romanian Deadlift"
+        case (.deadlift, .top):
+            "Deadlift from Blocks"
+        default:
+            nil
         }
     }
 }

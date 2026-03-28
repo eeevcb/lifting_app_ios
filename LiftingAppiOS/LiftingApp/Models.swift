@@ -123,6 +123,26 @@ enum VariationLoadingMode: Codable, Hashable {
     case primaryLiftTargetMultiplier(Double)
     case externalLoadOnly
     case basePlusChains(baseMultiplier: Double, chainUnitPerSide: Double)
+    case referenceLiftEstimatedOneRepMax(referenceLift: LiftType, multiplier: Double)
+}
+
+enum StickingPoint: String, CaseIterable, Codable, Hashable, Identifiable {
+    case bottom
+    case mid
+    case top
+
+    var id: String { rawValue }
+
+    var displayName: String {
+        switch self {
+        case .bottom:
+            "Bottom"
+        case .mid:
+            "Mid"
+        case .top:
+            "Top"
+        }
+    }
 }
 
 struct VariationProfile: Identifiable, Codable, Hashable {
@@ -369,14 +389,27 @@ struct SessionDraft: Identifiable, Codable, Hashable {
     let programEntry: ProgramEntry
     var selectedVariation: VariationSelection
     var appliedTargetAdjustmentPercent: Double
+    var stickingPoint: StickingPoint?
+    var backoffRecommendationHandled: Bool
     var sets: [WorkoutSet]
     var generatedAt: Date
 
-    init(id: UUID = UUID(), programEntry: ProgramEntry, selectedVariation: VariationSelection, appliedTargetAdjustmentPercent: Double = 0, sets: [WorkoutSet], generatedAt: Date = .now) {
+    init(
+        id: UUID = UUID(),
+        programEntry: ProgramEntry,
+        selectedVariation: VariationSelection,
+        appliedTargetAdjustmentPercent: Double = 0,
+        stickingPoint: StickingPoint? = nil,
+        backoffRecommendationHandled: Bool = false,
+        sets: [WorkoutSet],
+        generatedAt: Date = .now
+    ) {
         self.id = id
         self.programEntry = programEntry
         self.selectedVariation = selectedVariation
         self.appliedTargetAdjustmentPercent = appliedTargetAdjustmentPercent
+        self.stickingPoint = stickingPoint
+        self.backoffRecommendationHandled = backoffRecommendationHandled
         self.sets = sets
         self.generatedAt = generatedAt
     }
@@ -392,6 +425,8 @@ struct SessionDraft: Identifiable, Codable, Hashable {
             selectedVariation = VariationSelection(profileName: legacyVariation)
         }
         appliedTargetAdjustmentPercent = try container.decodeIfPresent(Double.self, forKey: .appliedTargetAdjustmentPercent) ?? 0
+        stickingPoint = try container.decodeIfPresent(StickingPoint.self, forKey: .stickingPoint)
+        backoffRecommendationHandled = try container.decodeIfPresent(Bool.self, forKey: .backoffRecommendationHandled) ?? false
         sets = try container.decode([WorkoutSet].self, forKey: .sets)
         generatedAt = try container.decodeIfPresent(Date.self, forKey: .generatedAt) ?? .now
     }
@@ -402,6 +437,8 @@ struct SessionDraft: Identifiable, Codable, Hashable {
         try container.encode(programEntry, forKey: .programEntry)
         try container.encode(selectedVariation, forKey: .selectedVariation)
         try container.encode(appliedTargetAdjustmentPercent, forKey: .appliedTargetAdjustmentPercent)
+        try container.encodeIfPresent(stickingPoint, forKey: .stickingPoint)
+        try container.encode(backoffRecommendationHandled, forKey: .backoffRecommendationHandled)
         try container.encode(sets, forKey: .sets)
         try container.encode(generatedAt, forKey: .generatedAt)
     }
@@ -411,6 +448,8 @@ struct SessionDraft: Identifiable, Codable, Hashable {
         case programEntry
         case selectedVariation
         case appliedTargetAdjustmentPercent
+        case stickingPoint
+        case backoffRecommendationHandled
         case sets
         case generatedAt
     }
@@ -444,10 +483,34 @@ struct CompletedSession: Identifiable, Codable, Hashable {
     let programEntry: ProgramEntry
     let performedOn: Date
     let variation: String
+    let stickingPoint: StickingPoint?
     let sets: [WorkoutSet]
     let fatigue: FatigueAssessment
     let summary: SessionSummary
     let nextTargetWeight: Double?
+}
+
+struct BackoffRecommendationPrompt: Identifiable, Hashable {
+    let id = UUID()
+    let actualTopSetEffort: Double
+    let expectedTopSetEffort: Double
+    let topSetFatigue: Double
+    let recommendation: EngineRecommendation
+
+    var title: String {
+        recommendation == .deload ? "Skip Backoff Work?" : "Recommend Skipping Backoff?"
+    }
+
+    var message: String {
+        "Working-set effort came in at \(compact(actualTopSetEffort)) against a target of \(compact(expectedTopSetEffort)). Skip the unfinished backoff work for this session?"
+    }
+
+    private func compact(_ value: Double) -> String {
+        if value.rounded() == value {
+            return String(Int(value))
+        }
+        return String(format: "%.1f", value)
+    }
 }
 
 struct ProgramRun: Identifiable, Codable, Hashable {

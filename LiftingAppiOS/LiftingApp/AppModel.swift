@@ -134,6 +134,18 @@ final class AppModel {
         return currentDraft?.appliedTargetAdjustmentPercent ?? 0
     }
 
+    var currentStickingPoint: StickingPoint? {
+        if let session = currentCompletedSession {
+            return session.stickingPoint
+        }
+        return currentDraft?.stickingPoint
+    }
+
+    var currentRecommendedVariationName: String? {
+        guard let entry = currentEntry, let stickingPoint = currentStickingPoint else { return nil }
+        return ProgramDefinition.recommendedVariationName(for: entry.primaryLift, stickingPoint: stickingPoint)
+    }
+
     var estimatedOneRepMaxTrend: [AnalyticsPoint] {
         weekOrderedPoints(from: completedSessions) { _, sessions in
             sessions.compactMap(\.summary.bestEstimatedOneRepMax).max()
@@ -356,12 +368,11 @@ final class AppModel {
         guard let currentEntry, var draft = drafts[currentEntry.key] else { return }
         guard let profile = ProgramDefinition.variationProfile(named: profileName, for: currentEntry.primaryLift) else { return }
         guard let index = draft.sets.firstIndex(where: { $0.id == setID }) else { return }
-        let liftState = currentLiftState ?? LiftState.defaults[currentEntry.primaryLift]!
         let currentSet = draft.sets[index]
         let selection = ProgramDefinition.defaultSelection(for: profile)
         let regeneratedSet = WorkoutEngine.makeVariationSet(
             for: currentEntry,
-            liftState: liftState,
+            liftStates: liftStates,
             selection: selection,
             setOrder: currentSet.setOrder
         )
@@ -399,8 +410,8 @@ final class AppModel {
     }
 
     func addSet(_ type: WorkoutSetType) {
-        guard let currentEntry, let liftState = currentLiftState, let draft = drafts[currentEntry.key] else { return }
-        drafts[currentEntry.key] = WorkoutEngine.addSet(to: draft, setType: type, liftState: liftState)
+        guard let currentEntry, let draft = drafts[currentEntry.key] else { return }
+        drafts[currentEntry.key] = WorkoutEngine.addSet(to: draft, setType: type, liftStates: liftStates)
         persist()
     }
 
@@ -429,6 +440,8 @@ final class AppModel {
             programEntry: draft.programEntry,
             selectedVariation: draft.selectedVariation,
             appliedTargetAdjustmentPercent: draft.appliedTargetAdjustmentPercent,
+            stickingPoint: draft.stickingPoint,
+            backoffRecommendationHandled: draft.backoffRecommendationHandled,
             sets: result.completedSession.sets,
             generatedAt: .now
         )
@@ -472,6 +485,43 @@ final class AppModel {
 
     func updateAutoStartRestTimerOnCompletion(_ enabled: Bool) {
         autoStartRestTimerOnCompletion = enabled
+        persist()
+    }
+
+    func updateCurrentStickingPoint(_ stickingPoint: StickingPoint?) {
+        guard let currentEntry, var draft = drafts[currentEntry.key] else { return }
+        draft.stickingPoint = stickingPoint
+        drafts[currentEntry.key] = draft
+        persist()
+    }
+
+    func applyRecommendedVariation(to setID: UUID) {
+        guard let recommendedVariationName = currentRecommendedVariationName else { return }
+        updateVariation(for: setID, to: recommendedVariationName)
+    }
+
+    func currentBackoffRecommendation() -> BackoffRecommendationPrompt? {
+        guard let draft = currentDraft else { return nil }
+        return WorkoutEngine.liveBackoffRecommendation(for: draft)
+    }
+
+    func markBackoffRecommendationHandled() {
+        guard let currentEntry, var draft = drafts[currentEntry.key] else { return }
+        draft.backoffRecommendationHandled = true
+        drafts[currentEntry.key] = draft
+        persist()
+    }
+
+    func skipCurrentBackoffWork() {
+        guard let currentEntry, var draft = drafts[currentEntry.key] else { return }
+        draft.backoffRecommendationHandled = true
+        draft.sets = draft.sets.map { set in
+            guard set.setType == .backoff, !set.completed else { return set }
+            var updated = set
+            updated.skipped = true
+            return updated
+        }
+        drafts[currentEntry.key] = draft
         persist()
     }
 
@@ -592,6 +642,7 @@ final class AppModel {
                 let regeneratedDraft = makeDraft(for: entry, liftState: liftState, variation: existingDraft.selectedVariation)
                 existingDraft.sets = mergePreservingCompletedSets(existing: existingDraft.sets, regenerated: regeneratedDraft.sets)
                 existingDraft.appliedTargetAdjustmentPercent = regeneratedDraft.appliedTargetAdjustmentPercent
+                existingDraft.stickingPoint = existingDraft.stickingPoint ?? regeneratedDraft.stickingPoint
                 existingDraft.generatedAt = regeneratedDraft.generatedAt
                 drafts[entry.key] = existingDraft
             } else {
@@ -713,6 +764,8 @@ final class AppModel {
             programEntry: reopenedEntry,
             selectedVariation: reopenedSelection,
             appliedTargetAdjustmentPercent: reopenedSession.fatigue.targetAdjustmentPercent,
+            stickingPoint: reopenedSession.stickingPoint,
+            backoffRecommendationHandled: false,
             sets: reopenedSession.sets,
             generatedAt: .now
         )
@@ -722,7 +775,7 @@ final class AppModel {
         let adjustmentPercent = pendingTargetAdjustmentPercent(for: entry, liftState: liftState)
         return WorkoutEngine.makeDraft(
             for: entry,
-            liftState: liftState,
+            liftStates: liftStates,
             variation: variation,
             targetAdjustmentPercent: adjustmentPercent
         )

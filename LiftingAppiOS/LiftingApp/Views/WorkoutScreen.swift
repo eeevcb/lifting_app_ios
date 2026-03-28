@@ -5,6 +5,7 @@ struct WorkoutScreen: View {
     @FocusState private var focusedField: WorkoutFieldFocus?
     @State private var activeRestTimer: ActiveRestTimer?
     @State private var activeNumericInput: WorkoutNumericInput?
+    @State private var activeBackoffRecommendation: BackoffRecommendationPrompt?
     @State private var customRestMinutesText = ""
     @State private var visibleWeekPageIndex = 0
     @State private var isRestTimerCollapsed = false
@@ -29,6 +30,9 @@ struct WorkoutScreen: View {
                         selectionCard
                         autoTargetsCard(entry: entry, liftState: liftState)
                         engineInsightsCard(entry: entry, liftState: liftState)
+                        if supportsStickingPoint(for: entry) {
+                            stickingPointCard(entry: entry)
+                        }
                         setActionsCard(isFinished: model.isCurrentWorkoutFinished)
                         workoutLogCard(draft: draft, isFinished: model.isCurrentWorkoutFinished)
                         finishWorkoutCard(entry: entry, liftState: liftState, isFinished: model.isCurrentWorkoutFinished)
@@ -88,6 +92,29 @@ struct WorkoutScreen: View {
                 },
                 cancel: { activeNumericInput = nil }
             )
+        }
+        .alert(
+            activeBackoffRecommendation?.title ?? "Recommend Skipping Backoff?",
+            isPresented: Binding(
+                get: { activeBackoffRecommendation != nil },
+                set: { isPresented in
+                    if !isPresented {
+                        activeBackoffRecommendation = nil
+                    }
+                }
+            ),
+            presenting: activeBackoffRecommendation
+        ) { _ in
+            Button("Skip Backoff", role: .destructive) {
+                model.skipCurrentBackoffWork()
+                activeBackoffRecommendation = nil
+            }
+            Button("Keep Backoff") {
+                model.markBackoffRecommendationHandled()
+                activeBackoffRecommendation = nil
+            }
+        } message: { prompt in
+            Text(prompt.message)
         }
     }
 
@@ -330,6 +357,47 @@ struct WorkoutScreen: View {
         .background(cardBackground, in: RoundedRectangle(cornerRadius: 18))
     }
 
+    private func stickingPointCard(entry: ProgramEntry) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Sticking Point Feedback")
+                .font(.headline)
+
+            HStack(spacing: 8) {
+                ForEach(StickingPoint.allCases) { stickingPoint in
+                    selectionChip(
+                        title: stickingPoint.displayName,
+                        isSelected: model.currentStickingPoint == stickingPoint
+                    ) {
+                        model.updateCurrentStickingPoint(model.currentStickingPoint == stickingPoint ? nil : stickingPoint)
+                    }
+                }
+            }
+
+            if let recommendedVariationName = model.currentRecommendedVariationName {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Recommended Variation")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Text(recommendedVariationName)
+                        .font(.subheadline.weight(.semibold))
+                    Text("Tap “Use Suggested” on any variation row to apply this recommendation without changing the others.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+                .padding()
+                .background(insetBackground, in: RoundedRectangle(cornerRadius: 14))
+            } else {
+                Text("Pick where the lift felt hardest to get a variation recommendation for this workout.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .padding()
+        .background(cardBackground, in: RoundedRectangle(cornerRadius: 18))
+        .disabled(model.isCurrentWorkoutFinished)
+        .opacity(model.isCurrentWorkoutFinished ? 0.75 : 1)
+    }
+
     private func setActionsCard(isFinished: Bool) -> some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Add Sets")
@@ -369,6 +437,7 @@ struct WorkoutScreen: View {
                             WorkoutSetRow(
                                 set: set,
                                 variationOptions: ProgramDefinition.variationNames(for: draft.programEntry.primaryLift),
+                                recommendedVariationName: model.currentRecommendedVariationName,
                                 isWorkoutFinished: isFinished,
                                 onPresentNumericInput: { input in
                                     activeNumericInput = input
@@ -376,11 +445,15 @@ struct WorkoutScreen: View {
                                 onVariationChange: { profileName in
                                     model.updateVariation(for: set.id, to: profileName)
                                 },
+                                onApplyRecommendedVariation: {
+                                    model.applyRecommendedVariation(to: set.id)
+                                },
                                 onChange: { updatedSet, didCompleteNow in
                                     model.updateSet(set.id) { current in
                                         current = updatedSet
                                     }
-                                    if didCompleteNow, model.autoStartRestTimerOnCompletion {
+                                    let didPresentBackoffRecommendation = maybePresentBackoffRecommendation()
+                                    if didCompleteNow, !didPresentBackoffRecommendation, model.autoStartRestTimerOnCompletion {
                                         focusedField = nil
                                         presentRestTimer(seconds: model.lastUsedRestDurationSeconds)
                                     }
@@ -575,11 +648,20 @@ struct WorkoutScreen: View {
             }
         }
 
-        if input.field == .rpe, value > 0, model.autoStartRestTimerOnCompletion {
+        let didPresentBackoffRecommendation = (input.field == .rpe && input.setType == .topSet) ? maybePresentBackoffRecommendation() : false
+
+        if input.field == .rpe, value > 0, !didPresentBackoffRecommendation, model.autoStartRestTimerOnCompletion {
             presentRestTimer(seconds: model.lastUsedRestDurationSeconds)
         }
 
         activeNumericInput = nil
+    }
+
+    private func maybePresentBackoffRecommendation() -> Bool {
+        guard activeBackoffRecommendation == nil, !model.isCurrentWorkoutFinished else { return false }
+        guard let prompt = model.currentBackoffRecommendation() else { return false }
+        activeBackoffRecommendation = prompt
+        return true
     }
 
     private var weekPages: [[Int]] {
@@ -621,7 +703,17 @@ struct WorkoutScreen: View {
     private func backoffStatus(for session: CompletedSession) -> String {
         let backoffSets = session.sets.filter { $0.setType == .backoff }
         guard !backoffSets.isEmpty else { return "N/A" }
-        return backoffSets.contains(where: \.skipped) ? "Skipped" : "Kept"
+        if backoffSets.contains(where: \.skipped) {
+            return "Skipped"
+        }
+        if backoffSets.allSatisfy({ $0.completed && !$0.skipped }) {
+            return "Completed"
+        }
+        return "Kept"
+    }
+
+    private func supportsStickingPoint(for entry: ProgramEntry) -> Bool {
+        [.squat, .bench, .deadlift].contains(entry.primaryLift)
     }
 
     private func compactRPE(_ value: Double) -> String {
@@ -645,6 +737,7 @@ private enum WorkoutNumericField: Hashable {
 
 private struct WorkoutNumericInput: Identifiable {
     let setID: UUID
+    let setType: WorkoutSetType
     let field: WorkoutNumericField
     let title: String
     let values: [Double]
@@ -771,6 +864,10 @@ private struct CompletionSummarySheet: View {
                 summaryMetric(title: "Completed Sets", value: "\(session.summary.completedSetCount)")
                 summaryMetric(title: "Next Target", value: session.nextTargetWeight.map { "\(Int($0)) lb" } ?? "--")
             }
+
+            if let stickingPoint = session.stickingPoint {
+                summaryMetric(title: "Sticking Point", value: stickingPoint.displayName)
+            }
         }
         .padding()
         .background(Color(uiColor: .secondarySystemBackground), in: RoundedRectangle(cornerRadius: 18))
@@ -873,16 +970,24 @@ private struct CompletionSummarySheet: View {
     private func backoffStatus(for session: CompletedSession) -> String {
         let backoffSets = session.sets.filter { $0.setType == .backoff }
         guard !backoffSets.isEmpty else { return "N/A" }
-        return backoffSets.contains(where: \.skipped) ? "Skipped" : "Kept"
+        if backoffSets.contains(where: \.skipped) {
+            return "Skipped"
+        }
+        if backoffSets.allSatisfy({ $0.completed && !$0.skipped }) {
+            return "Completed"
+        }
+        return "Kept"
     }
 }
 
 private struct WorkoutSetRow: View {
     let set: WorkoutSet
     let variationOptions: [String]
+    let recommendedVariationName: String?
     let isWorkoutFinished: Bool
     let onPresentNumericInput: (WorkoutNumericInput) -> Void
     let onVariationChange: (String) -> Void
+    let onApplyRecommendedVariation: () -> Void
     let onChange: (WorkoutSet, Bool) -> Void
     let onDelete: () -> Void
 
@@ -919,6 +1024,7 @@ private struct WorkoutSetRow: View {
                         onPresentNumericInput(
                             WorkoutNumericInput(
                                 setID: set.id,
+                                setType: set.setType,
                                 field: .weight,
                                 title: "Weight",
                                 values: stride(from: 0.0, through: 1000.0, by: 5.0).map { $0 },
@@ -933,6 +1039,7 @@ private struct WorkoutSetRow: View {
                         onPresentNumericInput(
                             WorkoutNumericInput(
                                 setID: set.id,
+                                setType: set.setType,
                                 field: .reps,
                                 title: "Reps",
                                 values: Array(1...10).map(Double.init),
@@ -947,6 +1054,7 @@ private struct WorkoutSetRow: View {
                         onPresentNumericInput(
                             WorkoutNumericInput(
                                 setID: set.id,
+                                setType: set.setType,
                                 field: .rpe,
                                 title: "RPE",
                                 values: stride(from: 0.5, through: 10.0, by: 0.5).map { $0 },
@@ -1047,6 +1155,7 @@ private struct WorkoutSetRow: View {
                             onPresentNumericInput(
                                 WorkoutNumericInput(
                                     setID: set.id,
+                                    setType: set.setType,
                                     field: .chainCount,
                                     title: "Chains / Side",
                                     values: Array(0...20).map(Double.init),
@@ -1063,12 +1172,15 @@ private struct WorkoutSetRow: View {
                 Label("Chain count is per side. 1 means one 15 lb chain on each side, for 30 lb total added chain weight.", systemImage: "info.circle")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
-            } else if set.variationProfileName == "Pull Ups" {
-                Label("Defaults to 0 added load. Add weight only if using a belt.", systemImage: "info.circle")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
             } else {
                 metricDetail(title: "Total Load", value: set.totalDisplayedLoad > 0 ? "\(Int(set.totalDisplayedLoad)) lb" : "--")
+            }
+
+            if let recommendedVariationName, recommendedVariationName != (set.variationProfileName ?? set.exerciseName), !isLocked {
+                Button("Use Suggested: \(recommendedVariationName)") {
+                    onApplyRecommendedVariation()
+                }
+                .buttonStyle(.bordered)
             }
         }
     }

@@ -15,13 +15,14 @@ enum WorkoutEngine {
         ]
     ]
 
-    static func makeDraft(for entry: ProgramEntry, liftState: LiftState, variation: VariationSelection?, targetAdjustmentPercent: Double = 0) -> SessionDraft {
+    static func makeDraft(for entry: ProgramEntry, liftStates: [LiftType: LiftState], variation: VariationSelection?, targetAdjustmentPercent: Double = 0) -> SessionDraft {
         let chosenVariation = variation ?? ProgramDefinition.defaultVariationSelection(for: entry.primaryLift)
-        let sets = initialSets(for: entry, liftState: liftState, variation: chosenVariation, targetAdjustmentPercent: targetAdjustmentPercent)
+        let sets = initialSets(for: entry, liftStates: liftStates, variation: chosenVariation, targetAdjustmentPercent: targetAdjustmentPercent)
         return SessionDraft(programEntry: entry, selectedVariation: chosenVariation, appliedTargetAdjustmentPercent: targetAdjustmentPercent, sets: sets)
     }
 
-    static func initialSets(for entry: ProgramEntry, liftState: LiftState, variation: VariationSelection, targetAdjustmentPercent: Double = 0) -> [WorkoutSet] {
+    static func initialSets(for entry: ProgramEntry, liftStates: [LiftType: LiftState], variation: VariationSelection, targetAdjustmentPercent: Double = 0) -> [WorkoutSet] {
+        let liftState = liftStates[entry.primaryLift] ?? LiftState.defaults[entry.primaryLift]!
         let topWeight = targetWeight(for: entry, liftState: liftState, targetAdjustmentPercent: targetAdjustmentPercent)
         let warmups = warmupScheme(for: entry.primaryLift, topWeight: topWeight, plannedReps: entry.reps, plannedType: entry.plannedType)
 
@@ -63,15 +64,16 @@ enum WorkoutEngine {
         }
 
         if shouldAddDefaultVariation(for: entry) {
-            sets.append(defaultVariationSet(for: entry, liftState: liftState, selection: variation, setOrder: sets.count + 1))
+            sets.append(defaultVariationSet(for: entry, liftStates: liftStates, selection: variation, setOrder: sets.count + 1))
         }
 
         return normalize(sets)
     }
 
-    static func addSet(to draft: SessionDraft, setType: WorkoutSetType, liftState: LiftState) -> SessionDraft {
+    static func addSet(to draft: SessionDraft, setType: WorkoutSetType, liftStates: [LiftType: LiftState]) -> SessionDraft {
         var updatedDraft = draft
         let plan = draft.programEntry
+        let liftState = liftStates[plan.primaryLift] ?? LiftState.defaults[plan.primaryLift]!
         let topWeight = targetWeight(for: plan, liftState: liftState, targetAdjustmentPercent: draft.appliedTargetAdjustmentPercent)
         let matchingSetCount = draft.sets.filter { $0.setType == setType }.count
 
@@ -80,7 +82,7 @@ enum WorkoutEngine {
             updatedDraft.sets.append(
                 defaultVariationSet(
                     for: plan,
-                    liftState: liftState,
+                    liftStates: liftStates,
                     selection: draft.selectedVariation,
                     setOrder: updatedDraft.sets.count + 1
                 )
@@ -124,17 +126,17 @@ enum WorkoutEngine {
 
     static func completeSession(_ draft: SessionDraft, liftState: LiftState, date: Date = .now) -> SessionCompletionResult {
         let fatigue = assessFatigue(for: draft)
-        let adjustedDraft = applyBackoffDecision(to: draft, fatigue: fatigue)
-        let summary = makeSummary(for: adjustedDraft)
-        let updatedState = updateLiftState(from: liftState, draft: adjustedDraft, fatigue: fatigue, summary: summary, performedOn: date)
+        let summary = makeSummary(for: draft)
+        let updatedState = updateLiftState(from: liftState, draft: draft, fatigue: fatigue, summary: summary, performedOn: date)
         let nextTarget = targetWeight(for: draft.programEntry, liftState: updatedState, targetAdjustmentPercent: updatedState.pendingTargetAdjustmentPercent)
 
         let completed = CompletedSession(
             id: draft.id,
             programEntry: draft.programEntry,
             performedOn: date,
-            variation: variationSummaryText(from: adjustedDraft.sets) ?? "",
-            sets: adjustedDraft.sets.sortedForDisplay(),
+            variation: variationSummaryText(from: draft.sets) ?? "",
+            stickingPoint: draft.stickingPoint,
+            sets: draft.sets.sortedForDisplay(),
             fatigue: fatigue,
             summary: summary,
             nextTargetWeight: nextTarget == 0 ? nil : nextTarget
@@ -195,8 +197,38 @@ enum WorkoutEngine {
         return (straightBarWeight, chainLoad, totalLoad)
     }
 
-    static func makeVariationSet(for entry: ProgramEntry, liftState: LiftState, selection: VariationSelection, setOrder: Int) -> WorkoutSet {
-        defaultVariationSet(for: entry, liftState: liftState, selection: selection, setOrder: setOrder)
+    static func makeVariationSet(for entry: ProgramEntry, liftStates: [LiftType: LiftState], selection: VariationSelection, setOrder: Int) -> WorkoutSet {
+        defaultVariationSet(for: entry, liftStates: liftStates, selection: selection, setOrder: setOrder)
+    }
+
+    static func liveBackoffRecommendation(for draft: SessionDraft) -> BackoffRecommendationPrompt? {
+        guard draft.sets.contains(where: { $0.setType == .backoff && !$0.completed && !$0.skipped }) else { return nil }
+        guard !draft.backoffRecommendationHandled else { return nil }
+
+        let requiredTopSets = draft.sets.filter { $0.setType == .topSet && !$0.skipped }
+        guard !requiredTopSets.isEmpty else { return nil }
+        guard requiredTopSets.allSatisfy({ $0.completed && ($0.rpe ?? 0) > 0 }) else { return nil }
+
+        let expectedTopSetEffort = expectedTopSetEffort(for: draft.programEntry)
+        let actualTopSetEffort = requiredTopSets.compactMap(\.rpe).average ?? expectedTopSetEffort
+        let topSetFatigue = actualTopSetEffort - expectedTopSetEffort
+        guard topSetFatigue >= 0.5 else { return nil }
+
+        let recommendation: EngineRecommendation
+        if topSetFatigue >= 1.5 {
+            recommendation = .deload
+        } else if topSetFatigue >= 0.75 {
+            recommendation = .reduce
+        } else {
+            recommendation = .hold
+        }
+
+        return BackoffRecommendationPrompt(
+            actualTopSetEffort: actualTopSetEffort,
+            expectedTopSetEffort: expectedTopSetEffort,
+            topSetFatigue: topSetFatigue,
+            recommendation: recommendation
+        )
     }
 
     private static func shouldAddDefaultBackoff(for entry: ProgramEntry) -> Bool {
@@ -245,7 +277,8 @@ enum WorkoutEngine {
         return base + ramps
     }
 
-    private static func defaultVariationSet(for entry: ProgramEntry, liftState: LiftState, selection: VariationSelection, setOrder: Int) -> WorkoutSet {
+    private static func defaultVariationSet(for entry: ProgramEntry, liftStates: [LiftType: LiftState], selection: VariationSelection, setOrder: Int) -> WorkoutSet {
+        let liftState = liftStates[entry.primaryLift] ?? LiftState.defaults[entry.primaryLift]!
         let topWeight = targetWeight(for: entry, liftState: liftState, targetAdjustmentPercent: 0)
         guard let profile = ProgramDefinition.variationProfile(named: selection.profileName, for: entry.primaryLift) else {
             return WorkoutSet(
@@ -275,6 +308,11 @@ enum WorkoutEngine {
             weight = roundToIncrement(topWeight * baseMultiplier)
             chainCountPerSide = max(0, selection.chainCountPerSide)
             chainUnitWeightPerSide = chainUnitPerSide
+        case .referenceLiftEstimatedOneRepMax(let referenceLift, let multiplier):
+            let referenceLiftState = liftStates[referenceLift] ?? LiftState.defaults[referenceLift]!
+            weight = roundToIncrement(referenceLiftState.estimatedOneRepMax * multiplier)
+            chainCountPerSide = 0
+            chainUnitWeightPerSide = nil
         }
 
         return WorkoutSet(
@@ -323,9 +361,7 @@ enum WorkoutEngine {
         }
 
         let hasBackoffWork = draft.sets.contains(where: { $0.setType == .backoff })
-        let skipBackoffWork = hasAnyEffortData
-            && hasBackoffWork
-            && (recommendation != .hold || topSetFatigue >= 0.5 || rampFatigue >= 1.0)
+        let skipBackoffWork = hasBackoffWork && hasTopSetEffortData && topSetFatigue >= 0.5
         let targetAdjustmentPercent: Double
         if recommendation == .deload {
             targetAdjustmentPercent = -0.08
@@ -347,9 +383,7 @@ enum WorkoutEngine {
                 decisionReason = "Recorded effort supported a \(recommendation.displayName.lowercased()) call, and no backoff work was programmed for this session."
             }
         } else if skipBackoffWork {
-            decisionReason = recommendation == .deload
-                ? "Backoff work was skipped because working-set effort came in well above the expected target."
-                : "Backoff work was skipped because ramp or working-set effort came in above the expected target."
+            decisionReason = "Backoff skip was recommended because working-set effort came in above the expected target."
         } else if recommendation != .hold {
             decisionReason = "Recorded effort supported a \(recommendation.displayName.lowercased()) call, but backoff work was already kept as logged."
         } else {
@@ -474,19 +508,6 @@ enum WorkoutEngine {
         case (false, false):
             return top
         }
-    }
-
-    private static func applyBackoffDecision(to draft: SessionDraft, fatigue: FatigueAssessment) -> SessionDraft {
-        guard fatigue.skipBackoffWork else { return draft }
-
-        var updatedDraft = draft
-        updatedDraft.sets = updatedDraft.sets.map { set in
-            guard set.setType == .backoff, !set.completed else { return set }
-            var updated = set
-            updated.skipped = true
-            return updated
-        }
-        return updatedDraft
     }
 
     private static func roundToIncrement(_ value: Double, increment: Double = 5) -> Double {
