@@ -112,6 +112,28 @@ final class AppModel {
         return target == 0 ? nil : target
     }
 
+    var currentEngineStatusText: String {
+        if let session = currentCompletedSession {
+            return session.fatigue.recommendation.displayName
+        }
+
+        guard let draft = currentDraft else { return "Pending" }
+
+        if let previewRecommendation = previewRecommendation(for: draft) {
+            return previewRecommendation.displayName
+        }
+
+        return "Pending"
+    }
+
+    var currentTargetShiftPercent: Double {
+        if let session = currentCompletedSession {
+            return session.fatigue.targetAdjustmentPercent
+        }
+
+        return currentDraft?.appliedTargetAdjustmentPercent ?? 0
+    }
+
     var estimatedOneRepMaxTrend: [AnalyticsPoint] {
         weekOrderedPoints(from: completedSessions) { _, sessions in
             sessions.compactMap(\.summary.bestEstimatedOneRepMax).max()
@@ -736,6 +758,20 @@ final class AppModel {
         guard let variationSet = session.sets.first(where: { $0.setType == .variation }) else { return nil }
         let profileName = variationSet.variationProfileName ?? variationSet.exerciseName
         return VariationSelection(profileName: profileName, chainCountPerSide: variationSet.chainCountPerSide)
+    }
+
+    private func previewRecommendation(for draft: SessionDraft) -> EngineRecommendation? {
+        let adjustment = draft.appliedTargetAdjustmentPercent
+        if adjustment <= -0.08 {
+            return .deload
+        }
+        if adjustment < 0 {
+            return .reduce
+        }
+        if adjustment > 0 {
+            return .hold
+        }
+        return nil
     }
 
     private static func normalizedLiftStates(_ states: [LiftType: LiftState]) -> [LiftType: LiftState] {

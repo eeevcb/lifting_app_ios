@@ -247,12 +247,12 @@ struct WorkoutScreen: View {
 
             HStack {
                 metricBlock(title: "Fatigue", value: String(format: "%.1f", liftState.fatigueScore))
-                metricBlock(title: "Engine Status", value: liftState.lastRecommendation.displayName)
+                metricBlock(title: "Engine Status", value: model.currentEngineStatusText)
             }
 
             HStack {
                 metricBlock(title: "Training Max", value: "\(Int(liftState.trainingMax)) lb")
-                metricBlock(title: "Target Shift", value: percentString(from: liftState.lastTargetAdjustmentPercent))
+                metricBlock(title: "Target Shift", value: percentString(from: model.currentTargetShiftPercent))
             }
 
             HStack {
@@ -294,7 +294,7 @@ struct WorkoutScreen: View {
 
                 VStack(alignment: .leading, spacing: 8) {
                     insightRow(label: "Progression", value: fatigue.recommendation.displayName)
-                    insightRow(label: "Backoff", value: fatigue.skipBackoffWork ? "Skip" : "Keep")
+                    insightRow(label: "Backoff", value: backoffStatus(for: session))
                     insightRow(label: "Reason", value: fatigue.backoffDecisionReason)
                 }
                 .padding()
@@ -786,7 +786,7 @@ private struct CompletionSummarySheet: View {
 
             VStack(alignment: .leading, spacing: 8) {
                 detailRow(title: "Overall Delta", value: signedNumberString(session.fatigue.effortDelta))
-                detailRow(title: "Backoff", value: session.fatigue.skipBackoffWork ? "Skipped" : "Kept")
+                detailRow(title: "Backoff", value: backoffStatus(for: session))
                 detailRow(title: "Reason", value: session.fatigue.backoffDecisionReason)
             }
             .padding()
@@ -857,6 +857,12 @@ private struct CompletionSummarySheet: View {
             return String(Int(value))
         }
         return String(format: "%.1f", value)
+    }
+
+    private func backoffStatus(for session: CompletedSession) -> String {
+        let backoffSets = session.sets.filter { $0.setType == .backoff }
+        guard !backoffSets.isEmpty else { return "N/A" }
+        return backoffSets.contains(where: \.skipped) ? "Skipped" : "Kept"
     }
 }
 

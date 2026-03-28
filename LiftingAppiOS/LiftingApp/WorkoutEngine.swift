@@ -322,8 +322,9 @@ enum WorkoutEngine {
             recommendation = .hold
         }
 
+        let hasBackoffWork = draft.sets.contains(where: { $0.setType == .backoff })
         let skipBackoffWork = hasAnyEffortData
-            && draft.sets.contains(where: { $0.setType == .backoff })
+            && hasBackoffWork
             && (recommendation != .hold || topSetFatigue >= 0.5 || rampFatigue >= 1.0)
         let targetAdjustmentPercent: Double
         if recommendation == .deload {
@@ -339,10 +340,18 @@ enum WorkoutEngine {
         let decisionReason: String
         if !hasAnyEffortData {
             decisionReason = "No RPE data was recorded, so progression stays neutral and backoff work is not automatically skipped."
+        } else if !hasBackoffWork {
+            if recommendation == .hold {
+                decisionReason = "Recorded effort stayed close to target, and no backoff work was programmed for this session."
+            } else {
+                decisionReason = "Recorded effort supported a \(recommendation.displayName.lowercased()) call, and no backoff work was programmed for this session."
+            }
         } else if skipBackoffWork {
             decisionReason = recommendation == .deload
                 ? "Backoff work was skipped because working-set effort came in well above the expected target."
                 : "Backoff work was skipped because ramp or working-set effort came in above the expected target."
+        } else if recommendation != .hold {
+            decisionReason = "Recorded effort supported a \(recommendation.displayName.lowercased()) call, but backoff work was already kept as logged."
         } else {
             decisionReason = "Backoff work stays in plan because recorded effort stayed close to the expected target."
         }
