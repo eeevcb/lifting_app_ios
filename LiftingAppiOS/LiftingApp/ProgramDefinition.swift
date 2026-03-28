@@ -49,7 +49,7 @@ enum ProgramDefinition {
         ProgramEntry(week: 11, day: .monday, primaryLift: .squat, plannedType: .opener, sets: 1, reps: 1, phase: .peak),
         ProgramEntry(week: 11, day: .wednesday, primaryLift: .bench, plannedType: .opener, sets: 1, reps: 1, phase: .peak),
         ProgramEntry(week: 11, day: .thursday, primaryLift: .shoulderPress, plannedType: .workingSets, sets: 3, reps: 3, phase: .taper),
-        ProgramEntry(week: 11, day: .friday, primaryLift: .deadlift, plannedType: .deload, sets: 4, reps: 5, phase: .taper),
+        ProgramEntry(week: 11, day: .friday, primaryLift: .barbellRow, plannedType: .workingSets, sets: 4, reps: 8, phase: .taper),
         ProgramEntry(week: 12, day: .monday, primaryLift: .squat, plannedType: .deload, sets: 5, reps: 5, phase: .taper),
         ProgramEntry(week: 12, day: .wednesday, primaryLift: .bench, plannedType: .deload, sets: 5, reps: 5, phase: .taper),
         ProgramEntry(week: 12, day: .thursday, primaryLift: .shoulderPress, plannedType: .deload, sets: 5, reps: 5, phase: .taper),
@@ -72,6 +72,7 @@ enum ProgramDefinition {
             VariationProfile(name: "Deadlift from Blocks", lift: .deadlift, loadingMode: .primaryLiftTargetMultiplier(1.05), defaultRelativeLoad: 1.05, helperText: "Defaults to 105% of the day’s deadlift working target."),
             VariationProfile(name: "Deficit Deadlift", lift: .deadlift, loadingMode: .primaryLiftTargetMultiplier(0.90), defaultRelativeLoad: 0.90, helperText: "Defaults to 90% of the day’s deadlift working target."),
             VariationProfile(name: "Romanian Deadlift", lift: .deadlift, loadingMode: .primaryLiftTargetMultiplier(0.80), defaultRelativeLoad: 0.80, helperText: "Defaults to 80% of the day’s deadlift working target.")
+            , VariationProfile(name: "Barbell Row", lift: .deadlift, loadingMode: .primaryLiftTargetMultiplier(0.55), defaultRelativeLoad: 0.55, helperText: "Defaults to 55% of the day's deadlift working target for back-only rowing work.")
         ],
         .shoulderPress: [
             VariationProfile(name: "Landmine Press", lift: .shoulderPress, loadingMode: .primaryLiftTargetMultiplier(0.75), defaultRelativeLoad: 0.75, helperText: "Defaults to 75% of the day’s press working target."),

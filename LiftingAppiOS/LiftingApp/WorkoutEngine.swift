@@ -226,6 +226,8 @@ enum WorkoutEngine {
             [(.warmup, 6, roundToIncrement(topWeight * 0.35)), (.warmup, 4, roundToIncrement(topWeight * 0.55))]
         case .shoulderPress:
             [(.warmup, 10, roundToIncrement(topWeight * 0.25)), (.warmup, 5, roundToIncrement(topWeight * 0.5))]
+        case .barbellRow:
+            [(.warmup, 10, roundToIncrement(topWeight * 0.25)), (.warmup, 6, roundToIncrement(topWeight * 0.45))]
         }
 
         let ramps: [(WorkoutSetType, Int, Double)]

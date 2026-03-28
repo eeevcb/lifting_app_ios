@@ -4,7 +4,7 @@ This folder contains the native SwiftUI version of the lifting app.
 
 ## What the app does
 
-- Generates workout drafts from a 12-week program for squat, bench, shoulder press, and deadlift
+- Generates workout drafts from a 12-week program for squat, bench, shoulder press, deadlift, and barbell row
 - Builds each session from warmup, ramp, working, backoff, and variation sets
 - Runs a fatigue/progression engine when a workout is finished
 - Updates lift state, training max, and future workout targets from completed sessions
@@ -36,10 +36,23 @@ The current engine is intentionally RPE-driven.
 Variation lifts are seeded from the day's working-set target.
 
 - Most variations use a default relative load multiplier
+- Deadlift days now include `Barbell Row` as a variation option
 - Pull-ups default to `0` external load
 - Bench with chains tracks straight-bar weight and chain load separately
 - Chain count is per side, using `15 lb` per side by default
 - Users still edit the actual variation weight directly in the workout log
+
+## Program updates
+
+- Week 11 Friday is now a back-only day with `Barbell Row` as the main lift
+- Finished workouts are locked until the user explicitly reopens them
+- Finished workouts can be reviewed from the summary sheet without re-running the same day
+
+## Dashboard behavior
+
+- Week-based charts always render left-to-right across the full 12-week program
+- Missing weeks remain visible as gaps instead of collapsing the axis
+- Target-shift charts include visible y-axis labels
 
 ## Deload generation
 

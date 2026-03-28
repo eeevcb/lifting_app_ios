@@ -8,7 +8,7 @@ Core user flows:
 
 - open today's workout
 - edit and complete sets
-- finish workout and receive a progression call
+- finish workout, lock the session, and review or reopen it later
 - review dashboard analytics
 - browse the active program
 - archive finished programs and review historical runs
@@ -24,7 +24,7 @@ Core user flows:
 - engine insights card with expected vs actual effort and next-target logic
 - variation selector
 - workout log rows for each set
-- finish-workout action and completion summary
+- finish-workout action, locked finished state, review summary, and reopen flow
 
 ### Dashboard
 
@@ -37,12 +37,13 @@ Core user flows:
 - recent engine calls
 - variation usage
 
-All week-based charts are rendered in ascending week order, not completion order.
+All week-based charts are rendered in ascending week order across the full 12-week span, not completion order.
 
 ### Program
 
 - active-run summary
 - current 12-week program schedule
+- Week 11 Friday is a back-only `Barbell Row` day instead of a deadlift day
 - completion state attached to the active program run
 - start-new-program flow with archive-and-restart behavior
 
@@ -67,6 +68,8 @@ Each primary lift keeps:
 - last successful session date
 - last recommendation
 - last target adjustment percent
+
+Tracked lifts include squat, bench, shoulder press, deadlift, and barbell row.
 
 ### Program run
 
@@ -132,6 +135,7 @@ Supported loading modes:
 - Deadlift from Blocks: `105%`
 - Deficit Deadlift: `90%`
 - Romanian Deadlift: `80%`
+- Barbell Row: `55%`
 
 ### Press / accessory
 
@@ -188,6 +192,12 @@ Safety rules:
 - no RPE data means neutral progression
 - completed effort data is the only fatigue evidence path
 
+Finished-workout rules:
+
+- a finished session is locked until reopened
+- reopening removes that session result from the active run
+- lift state is rebuilt by replaying the remaining completed sessions in program order
+
 ## Persistence
 
 The app persists:
@@ -210,3 +220,4 @@ Persistence is file-backed JSON with migration support from earlier snapshot for
 - Custom timer entry updates the saved default after confirmation
 - Marking a set completed can auto-start the timer when the user preference is enabled
 - The active timer is presented modally and can be canceled without changing the saved default
+- Skipped rows are locked and visually dimmed until unskipped

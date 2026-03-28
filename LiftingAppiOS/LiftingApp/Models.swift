@@ -12,6 +12,7 @@ enum LiftType: String, CaseIterable, Codable, Hashable, Identifiable {
     case bench
     case shoulderPress
     case deadlift
+    case barbellRow
 
     var id: String { rawValue }
 
@@ -21,6 +22,7 @@ enum LiftType: String, CaseIterable, Codable, Hashable, Identifiable {
         case .bench: "Bench"
         case .shoulderPress: "Shoulder Press"
         case .deadlift: "Deadlift"
+        case .barbellRow: "Barbell Row"
         }
     }
 }
@@ -301,7 +303,8 @@ struct LiftState: Codable, Hashable {
         .squat: LiftState(trainingMax: 300, estimatedOneRepMax: 315, lastGoodWorkingWeight: nil, fatigueScore: 0, lastSuccessfulSessionDate: nil, lastRecommendation: .hold, lastTargetAdjustmentPercent: 0),
         .bench: LiftState(trainingMax: 215, estimatedOneRepMax: 225, lastGoodWorkingWeight: nil, fatigueScore: 0, lastSuccessfulSessionDate: nil, lastRecommendation: .hold, lastTargetAdjustmentPercent: 0),
         .deadlift: LiftState(trainingMax: 385, estimatedOneRepMax: 405, lastGoodWorkingWeight: nil, fatigueScore: 0, lastSuccessfulSessionDate: nil, lastRecommendation: .hold, lastTargetAdjustmentPercent: 0),
-        .shoulderPress: LiftState(trainingMax: 125, estimatedOneRepMax: 135, lastGoodWorkingWeight: nil, fatigueScore: 0, lastSuccessfulSessionDate: nil, lastRecommendation: .hold, lastTargetAdjustmentPercent: 0)
+        .shoulderPress: LiftState(trainingMax: 125, estimatedOneRepMax: 135, lastGoodWorkingWeight: nil, fatigueScore: 0, lastSuccessfulSessionDate: nil, lastRecommendation: .hold, lastTargetAdjustmentPercent: 0),
+        .barbellRow: LiftState(trainingMax: 185, estimatedOneRepMax: 195, lastGoodWorkingWeight: nil, fatigueScore: 0, lastSuccessfulSessionDate: nil, lastRecommendation: .hold, lastTargetAdjustmentPercent: 0)
     ]
 }
 
