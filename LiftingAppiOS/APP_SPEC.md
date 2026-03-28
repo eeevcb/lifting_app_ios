@@ -19,7 +19,7 @@ Core user flows:
 
 - session header with current lift, week/day, and training max
 - rest timer with saved default duration, auto-start preference, and modal countdown
-- program start / week / day selection
+- button-based week / day session selection
 - auto-target card with estimated 1RM, target, fatigue, progression, and training max
 - engine insights card with expected vs actual effort and next-target logic
 - variation selector
@@ -38,12 +38,14 @@ Core user flows:
 - variation usage
 
 All week-based charts are rendered in ascending week order across the full 12-week span, not completion order.
+Small-screen chart layouts preserve the full 12-week span through horizontal scrolling instead of collapsing the range.
 
 ### Program
 
 - active-run summary
 - current 12-week program schedule
 - Week 11 Friday is a back-only `Barbell Row` day instead of a deadlift day
+- `Program Start Date` is edited from this page, not from the Workout tab
 - completion state attached to the active program run
 - start-new-program flow with archive-and-restart behavior
 
@@ -196,6 +198,7 @@ Finished-workout rules:
 
 - a finished session is locked until reopened
 - reopening removes that session result from the active run
+- reopening restores the previously finished set values so the user can edit mistakes
 - lift state is rebuilt by replaying the remaining completed sessions in program order
 
 ## Persistence
@@ -216,6 +219,9 @@ Persistence is file-backed JSON with migration support from earlier snapshot for
 
 - Numeric workout fields should support tap-outside dismissal and a keyboard `Done` action
 - The workout screen is the place where the user sets the default rest duration
+- The workout screen should not edit the program start date
+- Day selection should use buttons instead of a dropdown
+- Week selection should use 4-at-a-time paged buttons with arrows and swipe
 - Preset buttons update the saved default
 - Custom timer entry updates the saved default after confirmation
 - Marking a set completed can auto-start the timer when the user preference is enabled

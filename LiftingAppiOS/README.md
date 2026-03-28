@@ -47,12 +47,13 @@ Variation lifts are seeded from the day's working-set target.
 - Week 11 Friday is now a back-only day with `Barbell Row` as the main lift
 - Finished workouts are locked until the user explicitly reopens them
 - Finished workouts can be reviewed from the summary sheet without re-running the same day
+- Reopening a workout restores the previously finished set values so users can correct data-entry mistakes
 
 ## Dashboard behavior
 
 - Week-based charts always render left-to-right across the full 12-week program
 - Missing weeks remain visible as gaps instead of collapsing the axis
-- Target-shift charts include visible y-axis labels
+- Fatigue and target-shift charts include visible y-axis labels
 
 ## Deload generation
 
@@ -69,6 +70,8 @@ Deload days now generate real working sets instead of `0x0`.
 - Completed set rows lock their values until the user explicitly unchecks completion
 - Updating estimated 1RM preserves completed and skipped rows in the current draft
 - Only unfinished generated rows are recalculated when 1RM changes
+- The workout screen uses button-based day selection and a paged week selector instead of dropdowns
+- Program start date is edited only from the Program tab, not from the Workout screen
 
 ## Rest timer behavior
 

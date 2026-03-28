@@ -5,38 +5,47 @@ struct WorkoutScreen: View {
     @FocusState private var focusedField: WorkoutFieldFocus?
     @State private var activeRestTimer: ActiveRestTimer?
     @State private var customRestMinutesText = ""
+    @State private var visibleWeekPageIndex = 0
 
     private let cardBackground = Color(uiColor: .secondarySystemBackground)
     private let insetBackground = Color(uiColor: .systemBackground)
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 20) {
-                if let entry = model.currentEntry, let liftState = model.currentLiftState, let draft = model.currentDraft {
-                    sessionHeader(entry: entry, liftState: liftState)
-                    restTimerCard
-                    selectionCard
-                    autoTargetsCard(entry: entry, liftState: liftState)
-                    engineInsightsCard(entry: entry, liftState: liftState)
-                    variationCard(entry: entry, draft: draft, isFinished: model.isCurrentWorkoutFinished)
-                    setActionsCard(isFinished: model.isCurrentWorkoutFinished)
-                    workoutLogCard(draft: draft, isFinished: model.isCurrentWorkoutFinished)
-                    finishWorkoutCard(entry: entry, liftState: liftState, isFinished: model.isCurrentWorkoutFinished)
-                } else {
-                    ContentUnavailableView("No Workout", systemImage: "calendar.badge.exclamationmark", description: Text("There is no program entry for the selected day."))
+        ZStack {
+            Color.clear
+                .contentShape(Rectangle())
+                .onTapGesture {
+                    focusedField = nil
                 }
+
+            ScrollView {
+                VStack(alignment: .leading, spacing: 20) {
+                    if let entry = model.currentEntry, let liftState = model.currentLiftState, let draft = model.currentDraft {
+                        sessionHeader(entry: entry, liftState: liftState)
+                        restTimerCard
+                        selectionCard
+                        autoTargetsCard(entry: entry, liftState: liftState)
+                        engineInsightsCard(entry: entry, liftState: liftState)
+                        variationCard(entry: entry, draft: draft, isFinished: model.isCurrentWorkoutFinished)
+                        setActionsCard(isFinished: model.isCurrentWorkoutFinished)
+                        workoutLogCard(draft: draft, isFinished: model.isCurrentWorkoutFinished)
+                        finishWorkoutCard(entry: entry, liftState: liftState, isFinished: model.isCurrentWorkoutFinished)
+                    } else {
+                        ContentUnavailableView("No Workout", systemImage: "calendar.badge.exclamationmark", description: Text("There is no program entry for the selected day."))
+                    }
+                }
+                .padding()
             }
-            .padding()
-        }
-        .contentShape(Rectangle())
-        .onTapGesture {
-            focusedField = nil
         }
         .navigationTitle("Workout")
         .onAppear {
             if customRestMinutesText.isEmpty {
                 customRestMinutesText = "\(max(1, model.lastUsedRestDurationSeconds / 60))"
             }
+            syncVisibleWeekPage()
+        }
+        .onChange(of: model.selectedWeek) { _, _ in
+            syncVisibleWeekPage()
         }
         .toolbar {
             ToolbarItemGroup(placement: .keyboard) {
@@ -85,11 +94,6 @@ struct WorkoutScreen: View {
                 restPresetButton(minutes: 2)
                 restPresetButton(minutes: 3)
                 restPresetButton(minutes: 5)
-                Button("\(max(1, model.lastUsedRestDurationSeconds / 60)) Min") {
-                    focusedField = nil
-                }
-                .buttonStyle(.borderedProminent)
-                .frame(maxWidth: .infinity)
             }
 
             HStack(alignment: .bottom, spacing: 12) {
@@ -152,26 +156,64 @@ struct WorkoutScreen: View {
             Text("Session Setup")
                 .font(.headline)
 
-            DatePicker("Program Start", selection: Binding(
-                get: { model.programStartDate },
-                set: { model.updateProgramStartDate($0) }
-            ), displayedComponents: .date)
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Day")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
 
-            Picker("Week", selection: Binding(
-                get: { model.selectedWeek },
-                set: { model.select(week: $0, day: model.selectedDay) }
-            )) {
-                ForEach(model.weeks, id: \.self) { week in
-                    Text("Week \(week)").tag(week)
+                HStack(spacing: 8) {
+                    ForEach(TrainingDay.allCases) { day in
+                        selectionChip(
+                            title: day.rawValue,
+                            isSelected: model.selectedDay == day
+                        ) {
+                            model.select(week: model.selectedWeek, day: day)
+                        }
+                    }
                 }
             }
 
-            Picker("Day", selection: Binding(
-                get: { model.selectedDay },
-                set: { model.select(week: model.selectedWeek, day: $0) }
-            )) {
-                ForEach(TrainingDay.allCases) { day in
-                    Text(day.rawValue).tag(day)
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Week")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
+                HStack(spacing: 10) {
+                    Button {
+                        moveWeekPage(by: -1)
+                    } label: {
+                        Image(systemName: "chevron.left")
+                            .frame(width: 30, height: 30)
+                    }
+                    .buttonStyle(.bordered)
+                    .disabled(visibleWeekPageIndex == 0)
+
+                    TabView(selection: $visibleWeekPageIndex) {
+                        ForEach(Array(weekPages.enumerated()), id: \.offset) { index, weeks in
+                            HStack(spacing: 8) {
+                                ForEach(weeks, id: \.self) { week in
+                                    selectionChip(
+                                        title: "Week \(week)",
+                                        isSelected: model.selectedWeek == week
+                                    ) {
+                                        model.select(week: week, day: model.selectedDay)
+                                    }
+                                }
+                            }
+                            .tag(index)
+                        }
+                    }
+                    .tabViewStyle(.page(indexDisplayMode: .never))
+                    .frame(height: 44)
+
+                    Button {
+                        moveWeekPage(by: 1)
+                    } label: {
+                        Image(systemName: "chevron.right")
+                            .frame(width: 30, height: 30)
+                    }
+                    .buttonStyle(.bordered)
+                    .disabled(visibleWeekPageIndex >= max(weekPages.count - 1, 0))
                 }
             }
         }
@@ -405,6 +447,25 @@ struct WorkoutScreen: View {
         .buttonStyle(.bordered)
     }
 
+    private func selectionChip(title: String, isSelected: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text(title)
+                .font(.subheadline.weight(.semibold))
+                .lineLimit(1)
+                .minimumScaleFactor(0.85)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 10)
+                .padding(.horizontal, 8)
+        }
+        .buttonStyle(.plain)
+        .background(isSelected ? Color.blue.opacity(0.18) : insetBackground, in: RoundedRectangle(cornerRadius: 12))
+        .foregroundStyle(isSelected ? .blue : .primary)
+        .overlay {
+            RoundedRectangle(cornerRadius: 12)
+                .stroke(isSelected ? Color.blue.opacity(0.4) : Color.gray.opacity(0.15), lineWidth: 1)
+        }
+    }
+
     private func insightRow(label: String, value: String) -> some View {
         HStack(alignment: .top) {
             Text(label)
@@ -456,6 +517,22 @@ struct WorkoutScreen: View {
 
     private func presentRestTimer(seconds: Int) {
         activeRestTimer = ActiveRestTimer(seconds: seconds)
+    }
+
+    private var weekPages: [[Int]] {
+        stride(from: 0, to: model.weeks.count, by: 4).map { start in
+            Array(model.weeks[start..<min(start + 4, model.weeks.count)])
+        }
+    }
+
+    private func moveWeekPage(by offset: Int) {
+        let maxIndex = max(weekPages.count - 1, 0)
+        visibleWeekPageIndex = min(max(visibleWeekPageIndex + offset, 0), maxIndex)
+    }
+
+    private func syncVisibleWeekPage() {
+        guard let pageIndex = weekPages.firstIndex(where: { $0.contains(model.selectedWeek) }) else { return }
+        visibleWeekPageIndex = pageIndex
     }
 
     private func durationText(seconds: Int) -> String {

@@ -393,6 +393,7 @@ final class AppModel {
     func reopenCurrentWorkout() {
         guard let entry = currentEntry else { return }
         guard let session = completedSession(for: entry) else { return }
+        let existingSelection = drafts[entry.key]?.selectedVariation ?? VariationSelection(profileName: session.variation)
 
         activeRun.completedSessions.removeAll { $0.id == session.id }
         if lastCompletionSummary?.id == session.id {
@@ -400,7 +401,7 @@ final class AppModel {
         }
 
         rebuildLiftStatesFromActiveRun()
-        rebuildDraftsAfterSessionChange(reopenedEntry: entry)
+        rebuildDraftsAfterSessionChange(reopenedEntry: entry, reopenedSession: session, reopenedSelection: existingSelection)
         persist()
     }
 
@@ -633,7 +634,7 @@ final class AppModel {
         liftStates = rebuiltStates
     }
 
-    private func rebuildDraftsAfterSessionChange(reopenedEntry: ProgramEntry) {
+    private func rebuildDraftsAfterSessionChange(reopenedEntry: ProgramEntry, reopenedSession: CompletedSession, reopenedSelection: VariationSelection) {
         let existingSelections = drafts.mapValues(\.selectedVariation)
         var rebuiltDrafts: [String: SessionDraft] = [:]
 
@@ -645,13 +646,12 @@ final class AppModel {
         }
 
         drafts = rebuiltDrafts
-        if drafts[reopenedEntry.key] == nil {
-            let liftState = liftStates[reopenedEntry.primaryLift] ?? LiftState.defaults[reopenedEntry.primaryLift]!
-            drafts[reopenedEntry.key] = WorkoutEngine.makeDraft(
-                for: reopenedEntry,
-                liftState: liftState,
-                variation: existingSelections[reopenedEntry.key]
-            )
-        }
+        drafts[reopenedEntry.key] = SessionDraft(
+            id: reopenedSession.id,
+            programEntry: reopenedEntry,
+            selectedVariation: reopenedSelection,
+            sets: reopenedSession.sets,
+            generatedAt: .now
+        )
     }
 }

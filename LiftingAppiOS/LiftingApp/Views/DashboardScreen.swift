@@ -61,7 +61,7 @@ struct DashboardScreen: View {
                     }
                 }
                 .chartYAxis {
-                    AxisMarks(position: .leading) { value in
+                    AxisMarks(position: .leading, values: .automatic(desiredCount: 5)) { value in
                         AxisGridLine()
                         AxisTick()
                         if let numericValue = value.as(Double.self) {
