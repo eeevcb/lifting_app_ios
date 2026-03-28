@@ -25,6 +25,23 @@ struct WorkoutScreen: View {
             .padding()
         }
         .navigationTitle("Workout")
+        .sheet(
+            isPresented: Binding(
+                get: { model.lastCompletionSummary != nil },
+                set: { isPresented in
+                    if !isPresented {
+                        model.dismissCompletionSummary()
+                    }
+                }
+            )
+        ) {
+            if let session = model.lastCompletionSummary {
+                CompletionSummarySheet(
+                    session: session,
+                    dismiss: model.dismissCompletionSummary
+                )
+            }
+        }
     }
 
     private func sessionHeader(entry: ProgramEntry, liftState: LiftState) -> some View {
@@ -279,6 +296,141 @@ struct WorkoutScreen: View {
     }
 
     private func percentString(from value: Double) -> String {
+        let percent = value * 100
+        if percent > 0 {
+            return String(format: "+%.0f%%", percent)
+        }
+        return String(format: "%.0f%%", percent)
+    }
+
+    private func signedNumberString(_ value: Double) -> String {
+        if value > 0 {
+            return String(format: "+%.2f", value)
+        }
+        return String(format: "%.2f", value)
+    }
+}
+
+private struct CompletionSummarySheet: View {
+    let session: CompletedSession
+    let dismiss: () -> Void
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 20) {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Workout Complete")
+                            .font(.largeTitle.bold())
+                        Text("\(session.programEntry.primaryLift.displayName) • Week \(session.programEntry.week) \(session.programEntry.day.rawValue)")
+                            .foregroundStyle(.secondary)
+                    }
+
+                    summaryCard
+                    fatigueCard
+                    actionCard
+                }
+                .padding()
+            }
+            .navigationTitle("Summary")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Done", action: dismiss)
+                }
+            }
+        }
+        .presentationDetents([.medium, .large])
+    }
+
+    private var summaryCard: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Session Outcome")
+                .font(.headline)
+
+            HStack {
+                summaryMetric(title: "Volume", value: "\(Int(session.summary.totalVolume)) lb")
+                summaryMetric(title: "Best e1RM", value: session.summary.bestEstimatedOneRepMax.map { "\(Int($0)) lb" } ?? "--")
+            }
+
+            HStack {
+                summaryMetric(title: "Completed Sets", value: "\(session.summary.completedSetCount)")
+                summaryMetric(title: "Next Target", value: session.nextTargetWeight.map { "\(Int($0)) lb" } ?? "--")
+            }
+        }
+        .padding()
+        .background(Color(uiColor: .secondarySystemBackground), in: RoundedRectangle(cornerRadius: 18))
+    }
+
+    private var fatigueCard: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Engine Call")
+                .font(.headline)
+
+            HStack {
+                summaryMetric(title: "Recommendation", value: session.fatigue.recommendation.rawValue.capitalized)
+                summaryMetric(title: "Target Shift", value: percentString(session.fatigue.targetAdjustmentPercent))
+            }
+
+            HStack {
+                summaryMetric(title: "Ramp Effort", value: effortString(actual: session.fatigue.actualRampEffort, expected: session.fatigue.expectedRampEffort))
+                summaryMetric(title: "Top Effort", value: effortString(actual: session.fatigue.actualTopSetEffort, expected: session.fatigue.expectedTopSetEffort))
+            }
+
+            VStack(alignment: .leading, spacing: 8) {
+                detailRow(title: "Overall Delta", value: signedNumberString(session.fatigue.effortDelta))
+                detailRow(title: "Backoff", value: session.fatigue.skipBackoffWork ? "Skipped" : "Kept")
+                detailRow(title: "Reason", value: session.fatigue.backoffDecisionReason)
+            }
+            .padding()
+            .background(Color(uiColor: .systemBackground), in: RoundedRectangle(cornerRadius: 14))
+        }
+        .padding()
+        .background(Color(uiColor: .secondarySystemBackground), in: RoundedRectangle(cornerRadius: 18))
+    }
+
+    private var actionCard: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("What Happens Next")
+                .font(.headline)
+            Text("The lift state has been updated, future drafts for this lift were regenerated, and the next session target now reflects this result.")
+                .foregroundStyle(.secondary)
+            Button("Back to Workout", action: dismiss)
+                .buttonStyle(.borderedProminent)
+        }
+        .padding()
+        .background(Color(uiColor: .secondarySystemBackground), in: RoundedRectangle(cornerRadius: 18))
+    }
+
+    private func summaryMetric(title: String, value: String) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(title)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            Text(value)
+                .font(.title3.weight(.semibold))
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding()
+        .background(Color(uiColor: .systemBackground), in: RoundedRectangle(cornerRadius: 14))
+    }
+
+    private func detailRow(title: String, value: String) -> some View {
+        HStack(alignment: .top) {
+            Text(title)
+                .font(.subheadline.weight(.semibold))
+            Spacer(minLength: 12)
+            Text(value)
+                .multilineTextAlignment(.trailing)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    private func effortString(actual: Double, expected: Double) -> String {
+        String(format: "%.1f / %.1f", actual, expected)
+    }
+
+    private func percentString(_ value: Double) -> String {
         let percent = value * 100
         if percent > 0 {
             return String(format: "+%.0f%%", percent)

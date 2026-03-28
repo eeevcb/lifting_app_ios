@@ -10,6 +10,7 @@ final class AppModel {
     var drafts: [String: SessionDraft]
     var completedSessions: [CompletedSession]
     var liftStates: [LiftType: LiftState]
+    var lastCompletionSummary: CompletedSession?
 
     private let persistence = PersistenceController()
 
@@ -21,6 +22,7 @@ final class AppModel {
             drafts = snapshot.drafts
             completedSessions = snapshot.completedSessions
             liftStates = snapshot.liftStates
+            lastCompletionSummary = nil
         } else {
             programStartDate = ProgramDefinition.defaultStartDate
             selectedWeek = ProgramDefinition.weeks().first ?? 1
@@ -28,6 +30,7 @@ final class AppModel {
             drafts = [:]
             completedSessions = []
             liftStates = LiftState.defaults
+            lastCompletionSummary = nil
         }
 
         ensureDraftForSelection()
@@ -203,9 +206,14 @@ final class AppModel {
         let result = WorkoutEngine.completeSession(draft, liftState: liftState)
         liftStates[entry.primaryLift] = result.updatedLiftState
         completedSessions.append(result.completedSession)
+        lastCompletionSummary = result.completedSession
         drafts[entry.key] = WorkoutEngine.makeDraft(for: entry, liftState: result.updatedLiftState, variation: draft.selectedVariation)
         refreshFutureDrafts(for: entry.primaryLift, after: entry, using: result.updatedLiftState)
         persist()
+    }
+
+    func dismissCompletionSummary() {
+        lastCompletionSummary = nil
     }
 
     func sessionDate(for entry: ProgramEntry) -> Date {
