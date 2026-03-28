@@ -117,6 +117,56 @@ extension EngineRecommendation {
     static let allCasesForDashboard: [EngineRecommendation] = [.hold, .reduce, .deload]
 }
 
+enum VariationLoadingMode: Codable, Hashable {
+    case primaryLiftTargetMultiplier(Double)
+    case externalLoadOnly
+    case basePlusChains(baseMultiplier: Double, chainUnitPerSide: Double)
+}
+
+struct VariationProfile: Identifiable, Codable, Hashable {
+    let name: String
+    let lift: LiftType
+    let loadingMode: VariationLoadingMode
+    let defaultRelativeLoad: Double
+    let helperText: String?
+
+    var id: String { name }
+}
+
+struct VariationSelection: Codable, Hashable {
+    var profileName: String
+    var chainCountPerSide: Int
+
+    init(profileName: String, chainCountPerSide: Int = 0) {
+        self.profileName = profileName
+        self.chainCountPerSide = chainCountPerSide
+    }
+
+    init(from decoder: Decoder) throws {
+        if let singleValue = try? decoder.singleValueContainer(),
+           let profileName = try? singleValue.decode(String.self) {
+            self.profileName = profileName
+            self.chainCountPerSide = 0
+            return
+        }
+
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        profileName = try container.decode(String.self, forKey: .profileName)
+        chainCountPerSide = try container.decodeIfPresent(Int.self, forKey: .chainCountPerSide) ?? 0
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(profileName, forKey: .profileName)
+        try container.encode(chainCountPerSide, forKey: .chainCountPerSide)
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case profileName
+        case chainCountPerSide
+    }
+}
+
 struct ProgramEntry: Identifiable, Codable, Hashable {
     let week: Int
     let day: TrainingDay
@@ -144,6 +194,9 @@ struct WorkoutSet: Identifiable, Codable, Hashable {
     var rpe: Double?
     var completed: Bool
     var skipped: Bool
+    var variationProfileName: String?
+    var chainCountPerSide: Int
+    var chainUnitWeightPerSide: Double?
 
     init(
         id: UUID = UUID(),
@@ -154,7 +207,10 @@ struct WorkoutSet: Identifiable, Codable, Hashable {
         reps: Int?,
         rpe: Double? = nil,
         completed: Bool = false,
-        skipped: Bool = false
+        skipped: Bool = false,
+        variationProfileName: String? = nil,
+        chainCountPerSide: Int = 0,
+        chainUnitWeightPerSide: Double? = nil
     ) {
         self.id = id
         self.setOrder = setOrder
@@ -165,11 +221,70 @@ struct WorkoutSet: Identifiable, Codable, Hashable {
         self.rpe = rpe
         self.completed = completed
         self.skipped = skipped
+        self.variationProfileName = variationProfileName
+        self.chainCountPerSide = chainCountPerSide
+        self.chainUnitWeightPerSide = chainUnitWeightPerSide
+    }
+
+    var totalChainLoad: Double {
+        guard let chainUnitWeightPerSide else { return 0 }
+        return Double(chainCountPerSide) * chainUnitWeightPerSide * 2
+    }
+
+    var totalDisplayedLoad: Double {
+        (weight ?? 0) + totalChainLoad
     }
 
     var volumeContribution: Double {
-        guard completed, !skipped, let weight, let reps else { return 0 }
-        return weight * Double(reps)
+        guard completed, !skipped, let reps else { return 0 }
+        return totalDisplayedLoad * Double(reps)
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(UUID.self, forKey: .id)
+        setOrder = try container.decode(Int.self, forKey: .setOrder)
+        setType = try container.decode(WorkoutSetType.self, forKey: .setType)
+        exerciseName = try container.decode(String.self, forKey: .exerciseName)
+        weight = try container.decodeIfPresent(Double.self, forKey: .weight)
+        reps = try container.decodeIfPresent(Int.self, forKey: .reps)
+        rpe = try container.decodeIfPresent(Double.self, forKey: .rpe)
+        completed = try container.decode(Bool.self, forKey: .completed)
+        skipped = try container.decode(Bool.self, forKey: .skipped)
+        variationProfileName = try container.decodeIfPresent(String.self, forKey: .variationProfileName)
+        chainCountPerSide = try container.decodeIfPresent(Int.self, forKey: .chainCountPerSide) ?? 0
+        chainUnitWeightPerSide = try container.decodeIfPresent(Double.self, forKey: .chainUnitWeightPerSide)
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encode(setOrder, forKey: .setOrder)
+        try container.encode(setType, forKey: .setType)
+        try container.encode(exerciseName, forKey: .exerciseName)
+        try container.encodeIfPresent(weight, forKey: .weight)
+        try container.encodeIfPresent(reps, forKey: .reps)
+        try container.encodeIfPresent(rpe, forKey: .rpe)
+        try container.encode(completed, forKey: .completed)
+        try container.encode(skipped, forKey: .skipped)
+        try container.encodeIfPresent(variationProfileName, forKey: .variationProfileName)
+        try container.encode(chainCountPerSide, forKey: .chainCountPerSide)
+        try container.encodeIfPresent(chainUnitWeightPerSide, forKey: .chainUnitWeightPerSide)
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id
+        case setOrder
+        case setType
+        case exerciseName
+        case weight
+        case reps
+        case rpe
+        case completed
+        case skipped
+        case variationProfileName
+        case chainCountPerSide
+        case chainUnitWeightPerSide
     }
 }
 
@@ -193,16 +308,47 @@ struct LiftState: Codable, Hashable {
 struct SessionDraft: Identifiable, Codable, Hashable {
     let id: UUID
     let programEntry: ProgramEntry
-    var selectedVariation: String
+    var selectedVariation: VariationSelection
     var sets: [WorkoutSet]
     var generatedAt: Date
 
-    init(id: UUID = UUID(), programEntry: ProgramEntry, selectedVariation: String, sets: [WorkoutSet], generatedAt: Date = .now) {
+    init(id: UUID = UUID(), programEntry: ProgramEntry, selectedVariation: VariationSelection, sets: [WorkoutSet], generatedAt: Date = .now) {
         self.id = id
         self.programEntry = programEntry
         self.selectedVariation = selectedVariation
         self.sets = sets
         self.generatedAt = generatedAt
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(UUID.self, forKey: .id)
+        programEntry = try container.decode(ProgramEntry.self, forKey: .programEntry)
+        if let selection = try? container.decode(VariationSelection.self, forKey: .selectedVariation) {
+            selectedVariation = selection
+        } else {
+            let legacyVariation = try container.decode(String.self, forKey: .selectedVariation)
+            selectedVariation = VariationSelection(profileName: legacyVariation)
+        }
+        sets = try container.decode([WorkoutSet].self, forKey: .sets)
+        generatedAt = try container.decodeIfPresent(Date.self, forKey: .generatedAt) ?? .now
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encode(programEntry, forKey: .programEntry)
+        try container.encode(selectedVariation, forKey: .selectedVariation)
+        try container.encode(sets, forKey: .sets)
+        try container.encode(generatedAt, forKey: .generatedAt)
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id
+        case programEntry
+        case selectedVariation
+        case sets
+        case generatedAt
     }
 }
 

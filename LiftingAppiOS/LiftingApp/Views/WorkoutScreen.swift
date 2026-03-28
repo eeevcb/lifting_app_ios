@@ -226,6 +226,10 @@ struct WorkoutScreen: View {
                     .font(.footnote)
                     .foregroundStyle(.secondary)
 
+                Text("Progression stays neutral without RPE data, and skipped sets alone do not trigger deload logic.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+
                 if session.programEntry.key != entry.key {
                     Text("Showing the latest completed \(session.programEntry.primaryLift.displayName) session until this workout is finished.")
                         .font(.footnote)
@@ -247,12 +251,18 @@ struct WorkoutScreen: View {
                 .font(.headline)
 
             Picker("Accessory", selection: Binding(
-                get: { draft.selectedVariation },
+                get: { draft.selectedVariation.profileName },
                 set: { model.updateVariation($0) }
             )) {
-                ForEach(ProgramDefinition.variationOptions[entry.primaryLift] ?? [], id: \.self) { option in
+                ForEach(ProgramDefinition.variationNames(for: entry.primaryLift), id: \.self) { option in
                     Text(option).tag(option)
                 }
+            }
+
+            if let profile = ProgramDefinition.variationProfile(named: draft.selectedVariation.profileName, for: entry.primaryLift) {
+                Text(profile.helperText ?? "Variation defaults are seeded from the day’s working target and can still be edited set by set.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
             }
 
             Text("This selection is kept with the session draft and can later feed variation-impact analytics.")
@@ -287,7 +297,6 @@ struct WorkoutScreen: View {
             ForEach(draft.sets.sortedForDisplay()) { set in
                 WorkoutSetRow(
                     set: set,
-                    variationOptions: ProgramDefinition.variationOptions[draft.programEntry.primaryLift] ?? [],
                     onChange: { updatedSet in
                         model.updateSet(set.id) { current in
                             current = updatedSet
@@ -552,7 +561,6 @@ private struct CompletionSummarySheet: View {
 
 private struct WorkoutSetRow: View {
     let set: WorkoutSet
-    let variationOptions: [String]
     let onChange: (WorkoutSet) -> Void
     let onDelete: () -> Void
 
@@ -575,22 +583,13 @@ private struct WorkoutSetRow: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
 
-                if set.setType == .variation, !isLocked {
-                    Picker("Exercise", selection: stringBinding(\.exerciseName)) {
-                        ForEach(variationOptions, id: \.self) { option in
-                            Text(option).tag(option)
-                        }
-                    }
-                    .labelsHidden()
-                } else {
-                    lockedValue(set.exerciseName)
-                }
+                lockedValue(set.exerciseName)
             }
 
             HStack {
                 labeledField(
                     title: "Weight",
-                    readOnlyValue: set.weight.map { String(format: "%.1f", $0) } ?? "--"
+                    readOnlyValue: weightDisplayValue
                 ) {
                     TextField("Weight", value: doubleBinding(\.weight, maxValue: nil, autoCompleteWhenPositive: false), format: .number)
                         .textFieldStyle(.roundedBorder)
@@ -617,6 +616,10 @@ private struct WorkoutSetRow: View {
                         .keyboardType(.decimalPad)
                         .disabled(isLocked)
                 }
+            }
+
+            if set.setType == .variation {
+                variationDetails
             }
 
             Toggle("Completed", isOn: Binding(
@@ -672,15 +675,62 @@ private struct WorkoutSetRow: View {
             .foregroundStyle(.secondary)
     }
 
-    private func stringBinding(_ keyPath: WritableKeyPath<WorkoutSet, String>) -> Binding<String> {
-        Binding(
-            get: { set[keyPath: keyPath] },
-            set: { newValue in
-                var updated = set
-                updated[keyPath: keyPath] = newValue
-                onChange(updated)
+    @ViewBuilder
+    private var variationDetails: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            if let chainUnitWeightPerSide = set.chainUnitWeightPerSide {
+                HStack {
+                    labeledField(
+                        title: "Chains / Side",
+                        readOnlyValue: "\(set.chainCountPerSide)"
+                    ) {
+                        TextField("Chains / Side", value: intBinding(\.chainCountPerSide, maxValue: 20), format: .number)
+                            .textFieldStyle(.roundedBorder)
+                            .keyboardType(.numberPad)
+                            .disabled(isLocked)
+                    }
+
+                    metricDetail(title: "Chain Load", value: "\(Int(chainUnitWeightPerSide * 2 * Double(set.chainCountPerSide))) lb")
+                    metricDetail(title: "Top-End Load", value: "\(Int(set.totalDisplayedLoad)) lb")
+                }
+
+                Label("Chain count is per side. 1 means one 15 lb chain on each side, for 30 lb total added chain weight.", systemImage: "info.circle")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            } else if set.variationProfileName == "Pull Ups" {
+                Label("Defaults to 0 added load. Add weight only if using a belt.", systemImage: "info.circle")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            } else {
+                metricDetail(title: "Total Load", value: set.totalDisplayedLoad > 0 ? "\(Int(set.totalDisplayedLoad)) lb" : "--")
             }
-        )
+        }
+    }
+
+    private var weightDisplayValue: String {
+        if set.setType == .variation, set.totalChainLoad > 0 {
+            return "\(Int(set.weight ?? 0)) lb straight + \(Int(set.totalChainLoad)) lb chains"
+        }
+        if set.variationProfileName == "Pull Ups", (set.weight ?? 0) == 0 {
+            return "0.0"
+        }
+        if let weight = set.weight {
+            return String(format: "%.1f", weight)
+        }
+        return "--"
+    }
+
+    private func metricDetail(title: String, value: String) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(title)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            Text(value)
+                .font(.subheadline.weight(.semibold))
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(10)
+        .background(Color(uiColor: .secondarySystemBackground), in: RoundedRectangle(cornerRadius: 10))
     }
 
     private func doubleBinding(
@@ -710,6 +760,17 @@ private struct WorkoutSetRow: View {
                 var updated = set
                 let clampedValue = max(0, min(newValue, maxValue))
                 updated[keyPath: keyPath] = clampedValue == 0 ? nil : clampedValue
+                onChange(updated)
+            }
+        )
+    }
+
+    private func intBinding(_ keyPath: WritableKeyPath<WorkoutSet, Int>, maxValue: Int) -> Binding<Int> {
+        Binding(
+            get: { set[keyPath: keyPath] },
+            set: { newValue in
+                var updated = set
+                updated[keyPath: keyPath] = max(0, min(newValue, maxValue))
                 onChange(updated)
             }
         )

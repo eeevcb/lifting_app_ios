@@ -15,13 +15,13 @@ enum WorkoutEngine {
         ]
     ]
 
-    static func makeDraft(for entry: ProgramEntry, liftState: LiftState, variation: String?) -> SessionDraft {
-        let chosenVariation = variation ?? ProgramDefinition.variationOptions[entry.primaryLift]?.first ?? ""
+    static func makeDraft(for entry: ProgramEntry, liftState: LiftState, variation: VariationSelection?) -> SessionDraft {
+        let chosenVariation = variation ?? ProgramDefinition.defaultVariationSelection(for: entry.primaryLift)
         let sets = initialSets(for: entry, liftState: liftState, variation: chosenVariation)
         return SessionDraft(programEntry: entry, selectedVariation: chosenVariation, sets: sets)
     }
 
-    static func initialSets(for entry: ProgramEntry, liftState: LiftState, variation: String) -> [WorkoutSet] {
+    static func initialSets(for entry: ProgramEntry, liftState: LiftState, variation: VariationSelection) -> [WorkoutSet] {
         let topWeight = targetWeight(for: entry, liftState: liftState)
         let warmups = warmupScheme(for: entry.primaryLift, topWeight: topWeight, plannedReps: entry.reps, plannedType: entry.plannedType)
 
@@ -36,7 +36,7 @@ enum WorkoutEngine {
         }
 
         let topSetCount = entry.sets
-        let topSetReps = entry.plannedType == .deload ? 0 : entry.reps
+        let topSetReps = entry.reps
 
         for _ in 0..<topSetCount {
             sets.append(
@@ -63,15 +63,7 @@ enum WorkoutEngine {
         }
 
         if shouldAddDefaultVariation(for: entry) {
-            sets.append(
-                WorkoutSet(
-                    setOrder: sets.count + 1,
-                    setType: .variation,
-                    exerciseName: variation,
-                    weight: roundToIncrement(topWeight * 0.75),
-                    reps: 8
-                )
-            )
+            sets.append(defaultVariationSet(for: entry, liftState: liftState, selection: variation, setOrder: sets.count + 1))
         }
 
         return normalize(sets)
@@ -83,36 +75,49 @@ enum WorkoutEngine {
         let topWeight = targetWeight(for: plan, liftState: liftState)
         let matchingSetCount = draft.sets.filter { $0.setType == setType }.count
 
-        let weight: Double? = switch setType {
-        case .warmup:
-            roundToIncrement(topWeight * (0.3 + Double(matchingSetCount) * 0.1))
-        case .ramp:
-            roundToIncrement(topWeight * (0.7 + Double(matchingSetCount) * 0.08))
-        case .topSet:
-            topWeight
-        case .backoff:
-            roundToIncrement(topWeight * 0.9)
+        switch setType {
         case .variation:
-            roundToIncrement(topWeight * 0.75)
-        }
-
-        let reps: Int? = switch setType {
-        case .warmup: 8
-        case .ramp: max(1, plan.reps - 1)
-        case .topSet: plan.reps
-        case .backoff: max(2, plan.reps)
-        case .variation: 8
-        }
-
-        updatedDraft.sets.append(
-            WorkoutSet(
-                setOrder: updatedDraft.sets.count + 1,
-                setType: setType,
-                exerciseName: setType == .variation ? draft.selectedVariation : plan.primaryLift.displayName,
-                weight: weight,
-                reps: reps
+            updatedDraft.sets.append(
+                defaultVariationSet(
+                    for: plan,
+                    liftState: liftState,
+                    selection: draft.selectedVariation,
+                    setOrder: updatedDraft.sets.count + 1
+                )
             )
-        )
+        default:
+            let weight: Double? = switch setType {
+            case .warmup:
+                roundToIncrement(topWeight * (0.3 + Double(matchingSetCount) * 0.1))
+            case .ramp:
+                roundToIncrement(topWeight * (0.7 + Double(matchingSetCount) * 0.08))
+            case .topSet:
+                topWeight
+            case .backoff:
+                roundToIncrement(topWeight * 0.9)
+            case .variation:
+                nil
+            }
+
+            let reps: Int? = switch setType {
+            case .warmup: 8
+            case .ramp: max(1, plan.reps - 1)
+            case .topSet: plan.reps
+            case .backoff: max(2, plan.reps)
+            case .variation: 8
+            }
+
+            updatedDraft.sets.append(
+                WorkoutSet(
+                    setOrder: updatedDraft.sets.count + 1,
+                    setType: setType,
+                    exerciseName: plan.primaryLift.displayName,
+                    weight: weight,
+                    reps: reps
+                )
+            )
+        }
+
         updatedDraft.sets = normalize(updatedDraft.sets)
         return updatedDraft
     }
@@ -128,7 +133,7 @@ enum WorkoutEngine {
             id: draft.id,
             programEntry: draft.programEntry,
             performedOn: date,
-            variation: draft.selectedVariation,
+            variation: draft.selectedVariation.profileName,
             sets: adjustedDraft.sets.sortedForDisplay(),
             fatigue: fatigue,
             summary: summary,
@@ -167,6 +172,18 @@ enum WorkoutEngine {
         return round(weight * (1 + Double(reps) / 30))
     }
 
+    static func variationSummary(for set: WorkoutSet) -> (straightBarWeight: Double, chainLoad: Double, totalLoad: Double)? {
+        guard set.setType == .variation else { return nil }
+        let straightBarWeight = set.weight ?? 0
+        let chainLoad = set.totalChainLoad
+        let totalLoad = straightBarWeight + chainLoad
+        return (straightBarWeight, chainLoad, totalLoad)
+    }
+
+    static func makeVariationSet(for entry: ProgramEntry, liftState: LiftState, selection: VariationSelection, setOrder: Int) -> WorkoutSet {
+        defaultVariationSet(for: entry, liftState: liftState, selection: selection, setOrder: setOrder)
+    }
+
     private static func shouldAddDefaultBackoff(for entry: ProgramEntry) -> Bool {
         entry.plannedType == .workingSets && entry.reps <= 5 && entry.phase != .taper
     }
@@ -180,8 +197,8 @@ enum WorkoutEngine {
 
         if plannedType == .deload {
             return [
-                (.warmup, 8, roundToIncrement(topWeight * 0.45)),
-                (.ramp, 3, roundToIncrement(topWeight * 0.7))
+                (.warmup, 8, roundToIncrement(topWeight * 0.35)),
+                (.ramp, 5, roundToIncrement(topWeight * 0.5))
             ]
         }
 
@@ -208,6 +225,50 @@ enum WorkoutEngine {
         }
 
         return base + ramps
+    }
+
+    private static func defaultVariationSet(for entry: ProgramEntry, liftState: LiftState, selection: VariationSelection, setOrder: Int) -> WorkoutSet {
+        let topWeight = targetWeight(for: entry, liftState: liftState)
+        guard let profile = ProgramDefinition.variationProfile(named: selection.profileName, for: entry.primaryLift) else {
+            return WorkoutSet(
+                setOrder: setOrder,
+                setType: .variation,
+                exerciseName: selection.profileName,
+                weight: roundToIncrement(topWeight * 0.75),
+                reps: 8,
+                variationProfileName: selection.profileName
+            )
+        }
+
+        let weight: Double?
+        let chainCountPerSide: Int
+        let chainUnitWeightPerSide: Double?
+
+        switch profile.loadingMode {
+        case .primaryLiftTargetMultiplier(let multiplier):
+            weight = roundToIncrement(topWeight * multiplier)
+            chainCountPerSide = 0
+            chainUnitWeightPerSide = nil
+        case .externalLoadOnly:
+            weight = 0
+            chainCountPerSide = 0
+            chainUnitWeightPerSide = nil
+        case .basePlusChains(let baseMultiplier, let chainUnitPerSide):
+            weight = roundToIncrement(topWeight * baseMultiplier)
+            chainCountPerSide = max(0, selection.chainCountPerSide)
+            chainUnitWeightPerSide = chainUnitPerSide
+        }
+
+        return WorkoutSet(
+            setOrder: setOrder,
+            setType: .variation,
+            exerciseName: profile.name,
+            weight: weight,
+            reps: entry.plannedType == .deload ? 8 : 8,
+            variationProfileName: profile.name,
+            chainCountPerSide: chainCountPerSide,
+            chainUnitWeightPerSide: chainUnitWeightPerSide
+        )
     }
 
     private static func assessFatigue(for draft: SessionDraft) -> FatigueAssessment {
@@ -312,12 +373,12 @@ enum WorkoutEngine {
         let sortedSets = draft.sets.sortedForDisplay()
         let bestEstimatedOneRepMax = sortedSets
             .filter { !$0.skipped }
-            .compactMap { estimateOneRepMax(weight: $0.weight, reps: $0.reps) }
+            .compactMap { estimateOneRepMax(weight: $0.totalDisplayedLoad > 0 ? $0.totalDisplayedLoad : nil, reps: $0.reps) }
             .max()
 
         let totalVolume = sortedSets.reduce(0) { $0 + $1.volumeContribution }
         let completedSetCount = sortedSets.filter { $0.completed && !$0.skipped }.count
-        let variation = sortedSets.contains(where: { $0.setType == .variation && $0.completed && !$0.skipped }) ? draft.selectedVariation : nil
+        let variation = sortedSets.contains(where: { $0.setType == .variation && $0.completed && !$0.skipped }) ? draft.selectedVariation.profileName : nil
 
         return SessionSummary(
             totalVolume: totalVolume,

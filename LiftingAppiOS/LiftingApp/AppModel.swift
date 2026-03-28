@@ -86,9 +86,11 @@ final class AppModel {
         guard let draft = currentDraft else { return nil }
         return SessionSummary(
             totalVolume: draft.sets.reduce(0) { $0 + $1.volumeContribution },
-            bestEstimatedOneRepMax: draft.sets.compactMap { WorkoutEngine.estimateOneRepMax(weight: $0.weight, reps: $0.reps) }.max(),
+            bestEstimatedOneRepMax: draft.sets.compactMap { set in
+                WorkoutEngine.estimateOneRepMax(weight: set.totalDisplayedLoad > 0 ? set.totalDisplayedLoad : nil, reps: set.reps)
+            }.max(),
             completedSetCount: draft.sets.filter { $0.completed && !$0.skipped }.count,
-            variationUsed: draft.selectedVariation.isEmpty ? nil : draft.selectedVariation
+            variationUsed: draft.selectedVariation.profileName.isEmpty ? nil : draft.selectedVariation.profileName
         )
     }
 
@@ -295,13 +297,34 @@ final class AppModel {
 
     func updateVariation(_ value: String) {
         guard var draft = currentDraft, let currentEntry else { return }
-        draft.selectedVariation = value
+        guard let profile = ProgramDefinition.variationProfile(named: value, for: currentEntry.primaryLift) else { return }
+        let liftState = currentLiftState ?? LiftState.defaults[currentEntry.primaryLift]!
+        draft.selectedVariation = ProgramDefinition.defaultSelection(for: profile)
         draft.sets = draft.sets.map { set in
-            var updated = set
-            if updated.setType == .variation {
-                updated.exerciseName = value
-            }
-            return updated
+            guard set.setType == .variation else { return set }
+            return WorkoutEngine.makeVariationSet(
+                for: currentEntry,
+                liftState: liftState,
+                selection: draft.selectedVariation,
+                setOrder: set.setOrder
+            )
+        }
+        drafts[currentEntry.key] = draft
+        persist()
+    }
+
+    func updateVariationChainCount(_ chainCountPerSide: Int) {
+        guard let currentEntry, var draft = drafts[currentEntry.key] else { return }
+        draft.selectedVariation.chainCountPerSide = max(0, chainCountPerSide)
+        let liftState = currentLiftState ?? LiftState.defaults[currentEntry.primaryLift]!
+        draft.sets = draft.sets.map { set in
+            guard set.setType == .variation else { return set }
+            return WorkoutEngine.makeVariationSet(
+                for: currentEntry,
+                liftState: liftState,
+                selection: draft.selectedVariation,
+                setOrder: set.setOrder
+            )
         }
         drafts[currentEntry.key] = draft
         persist()
@@ -311,6 +334,10 @@ final class AppModel {
         guard let currentEntry, var draft = drafts[currentEntry.key] else { return }
         guard let index = draft.sets.firstIndex(where: { $0.id == setID }) else { return }
         mutate(&draft.sets[index])
+        if draft.sets[index].setType == .variation {
+            draft.selectedVariation.profileName = draft.sets[index].variationProfileName ?? draft.sets[index].exerciseName
+            draft.selectedVariation.chainCountPerSide = draft.sets[index].chainCountPerSide
+        }
         drafts[currentEntry.key] = draft
         persist()
     }
