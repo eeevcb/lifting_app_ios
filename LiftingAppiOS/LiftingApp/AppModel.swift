@@ -97,7 +97,7 @@ final class AppModel {
                 WorkoutEngine.estimateOneRepMax(weight: set.totalDisplayedLoad > 0 ? set.totalDisplayedLoad : nil, reps: set.reps)
             }.max(),
             completedSetCount: draft.sets.filter { $0.completed && !$0.skipped }.count,
-            variationUsed: draft.selectedVariation.profileName.isEmpty ? nil : draft.selectedVariation.profileName
+            variationUsed: actualVariationName(from: draft.sets, fallback: draft.selectedVariation.profileName)
         )
     }
 
@@ -109,6 +109,12 @@ final class AppModel {
 
     var estimatedOneRepMaxTrend: [AnalyticsPoint] {
         weekOrderedPoints(from: completedSessions) { _, sessions in
+            sessions.compactMap(\.summary.bestEstimatedOneRepMax).max()
+        }
+    }
+
+    var estimatedOneRepMaxTrendByLift: [LiftTrendSeries] {
+        liftSpecificTrend(from: completedSessions, lifts: [.squat, .bench, .deadlift]) { _, sessions in
             sessions.compactMap(\.summary.bestEstimatedOneRepMax).max()
         }
     }
@@ -144,7 +150,9 @@ final class AppModel {
     }
 
     var variationUsage: [AnalyticsPoint] {
-        let grouped = Dictionary(grouping: completedSessions.filter { !$0.variation.isEmpty }, by: \.variation)
+        let grouped = Dictionary(grouping: completedSessions.compactMap { session -> String? in
+            actualVariationName(from: session.sets, fallback: session.variation)
+        }, by: { $0 })
         return grouped
             .map { AnalyticsPoint(order: $0.value.count, label: $0.key, value: Double($0.value.count)) }
             .sorted { ($0.value ?? 0) > ($1.value ?? 0) }
@@ -251,6 +259,12 @@ final class AppModel {
 
     func estimatedOneRepMaxTrend(for run: ProgramRun) -> [AnalyticsPoint] {
         weekOrderedPoints(from: run.completedSessions) { _, sessions in
+            sessions.compactMap(\.summary.bestEstimatedOneRepMax).max()
+        }
+    }
+
+    func estimatedOneRepMaxTrendByLift(for run: ProgramRun) -> [LiftTrendSeries] {
+        liftSpecificTrend(from: run.completedSessions, lifts: [.squat, .bench, .deadlift]) { _, sessions in
             sessions.compactMap(\.summary.bestEstimatedOneRepMax).max()
         }
     }
@@ -445,7 +459,7 @@ final class AppModel {
         drafts = [:]
         activeRun = ProgramRun(startedAt: normalizedStartDate, programStartDate: normalizedStartDate)
         lastCompletionSummary = nil
-        autoSelectTodayIfNeeded(referenceDate: normalizedStartDate)
+        selectedTab = .workout
         ensureDraftForSelection()
         persist()
     }
@@ -582,6 +596,19 @@ final class AppModel {
         }
     }
 
+    private func liftSpecificTrend(
+        from sessions: [CompletedSession],
+        lifts: [LiftType],
+        reducer: (Int, [CompletedSession]) -> Double?
+    ) -> [LiftTrendSeries] {
+        lifts.map { lift in
+            LiftTrendSeries(
+                lift: lift,
+                points: weekOrderedPoints(from: sessions.filter { $0.programEntry.primaryLift == lift }, reducer: reducer)
+            )
+        }
+    }
+
     private func recommendationCounts(for sessions: [CompletedSession]) -> [RecommendationCount] {
         let grouped = Dictionary(grouping: sessions, by: \.fatigue.recommendation)
         return EngineRecommendation.allCasesForDashboard.map { recommendation in
@@ -594,7 +621,7 @@ final class AppModel {
             let liftSessions = sessions.filter { $0.programEntry.primaryLift == lift }
             let tonnage = liftSessions.reduce(0) { $0 + $1.summary.totalVolume }
             let bestEstimatedOneRepMax = liftSessions.compactMap(\.summary.bestEstimatedOneRepMax).max() ?? liftStates[lift]?.estimatedOneRepMax ?? 0
-            let variationCount = liftSessions.filter { !($0.summary.variationUsed ?? "").isEmpty }.count
+            let variationCount = liftSessions.filter { actualVariationName(from: $0.sets, fallback: $0.summary.variationUsed) != nil }.count
             let averageFatigueDelta = liftSessions.isEmpty ? 0 : liftSessions.reduce(0) { $0 + $1.fatigue.effortDelta } / Double(liftSessions.count)
             let latestRecommendation = liftSessions.sorted { $0.performedOn > $1.performedOn }.first?.fatigue.recommendation ?? .hold
             return LiftAnalyticsSnapshot(
@@ -653,11 +680,18 @@ final class AppModel {
 
         drafts = rebuiltDrafts
         drafts[reopenedEntry.key] = SessionDraft(
-            id: reopenedSession.id,
+            id: UUID(),
             programEntry: reopenedEntry,
             selectedVariation: reopenedSelection,
             sets: reopenedSession.sets,
             generatedAt: .now
         )
+    }
+
+    private func actualVariationName(from sets: [WorkoutSet], fallback: String?) -> String? {
+        let hasCompletedVariation = sets.contains { $0.setType == .variation && $0.completed && !$0.skipped }
+        guard hasCompletedVariation else { return nil }
+        let trimmedFallback = (fallback ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmedFallback.isEmpty ? nil : trimmedFallback
     }
 }

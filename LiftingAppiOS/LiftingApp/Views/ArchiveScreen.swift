@@ -104,8 +104,8 @@ private struct ArchiveRunDetailScreen: View {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 20) {
                         ProgramSummaryCard(summary: model.summary(for: run), isArchived: true)
-                        archiveTrendCard(title: "Estimated 1RM Trend", points: model.estimatedOneRepMaxTrend(for: run), color: .blue)
-                        archiveTrendCard(title: "Weekly Volume", points: model.weeklyVolumeTrend(for: run), color: .green)
+                        archiveLiftTrendCard(title: "Estimated 1RM Trend", series: model.estimatedOneRepMaxTrendByLift(for: run))
+                        archiveTrendCard(title: "Weekly Volume (Tonnage)", points: model.weeklyVolumeTrend(for: run), color: .green)
                         archiveTrendCard(title: "Fatigue Flags", points: model.fatigueTimeline(for: run), color: .orange)
                         archiveTrendCard(title: "Target Shifts", points: model.targetAdjustmentTimeline(for: run), color: .pink, yAxisLabelMode: .percent)
                         liftCalloutsCard(summary: model.summary(for: run))
@@ -162,14 +162,14 @@ private struct ArchiveRunDetailScreen: View {
                     }
                     .chartXScale(domain: 1...12)
                     .chartXAxis {
-                        AxisMarks(values: points.map(\.order)) { value in
+                        AxisMarks(values: Array(1...12)) { value in
                             if let week = value.as(Int.self) {
                                 AxisValueLabel("W\(week)")
                             }
                         }
                     }
                     .chartYAxis {
-                        AxisMarks(position: .leading, values: .automatic(desiredCount: 5)) { value in
+                        AxisMarks(position: .leading, values: axisValues(for: points, mode: yAxisLabelMode)) { value in
                             AxisGridLine()
                             AxisTick()
                             if let numericValue = value.as(Double.self) {
@@ -184,6 +184,58 @@ private struct ArchiveRunDetailScreen: View {
                     }
                     .frame(width: max(720, CGFloat(points.count) * 60), height: 200)
                 }
+            }
+        }
+        .padding()
+        .background(Color(uiColor: .secondarySystemBackground), in: RoundedRectangle(cornerRadius: 18))
+    }
+
+    private func archiveLiftTrendCard(title: String, series: [LiftTrendSeries]) -> some View {
+        let plottedSeries = series.map { (series: $0, points: segmentedPoints(from: $0.points)) }
+
+        return VStack(alignment: .leading, spacing: 12) {
+            Text(title)
+                .font(.headline)
+
+            HStack(spacing: 12) {
+                ForEach(series) { item in
+                    Label(item.lift.displayName, systemImage: "circle.fill")
+                        .font(.caption)
+                        .foregroundStyle(color(for: item.lift))
+                }
+            }
+
+            ScrollView(.horizontal, showsIndicators: false) {
+                Chart {
+                    ForEach(Array(plottedSeries.enumerated()), id: \.offset) { _, item in
+                        ForEach(item.points) { point in
+                            LineMark(
+                                x: .value("Week", point.order),
+                                y: .value("Value", point.value),
+                                series: .value("Series", "\(item.series.lift.rawValue)-\(point.segment)")
+                            )
+                            .foregroundStyle(color(for: item.series.lift))
+
+                            PointMark(
+                                x: .value("Week", point.order),
+                                y: .value("Value", point.value)
+                            )
+                            .foregroundStyle(color(for: item.series.lift))
+                        }
+                    }
+                }
+                .chartXScale(domain: 1...12)
+                .chartXAxis {
+                    AxisMarks(values: Array(1...12)) { value in
+                        if let week = value.as(Int.self) {
+                            AxisValueLabel("W\(week)")
+                        }
+                    }
+                }
+                .chartYAxis {
+                    AxisMarks(position: .leading, values: .automatic(desiredCount: 5))
+                }
+                .frame(width: max(720, CGFloat(12) * 60), height: 240)
             }
         }
         .padding()
@@ -258,6 +310,21 @@ private struct ArchiveRunDetailScreen: View {
         }
     }
 
+    private func color(for lift: LiftType) -> Color {
+        switch lift {
+        case .squat:
+            return .blue
+        case .bench:
+            return .green
+        case .deadlift:
+            return .purple
+        case .shoulderPress:
+            return .orange
+        case .barbellRow:
+            return .brown
+        }
+    }
+
     private func segmentedPoints(from points: [AnalyticsPoint]) -> [ArchiveTrendPlotPoint] {
         var segment = 0
         var plotted: [ArchiveTrendPlotPoint] = []
@@ -272,6 +339,20 @@ private struct ArchiveRunDetailScreen: View {
         }
 
         return plotted
+    }
+
+    private func axisValues(for points: [AnalyticsPoint], mode: ArchiveTrendAxisLabelMode) -> [Double] {
+        let values = points.compactMap(\.value)
+        guard let minValue = values.min(), let maxValue = values.max() else {
+            return mode == .percent ? [-10, 0, 10] : [0, 1, 2]
+        }
+        if minValue == maxValue {
+            return mode == .percent
+                ? [minValue - 5, minValue, minValue + 5]
+                : [minValue - 1, minValue, minValue + 1]
+        }
+        let midpoint = (minValue + maxValue) / 2
+        return [minValue, midpoint, maxValue]
     }
 }
 

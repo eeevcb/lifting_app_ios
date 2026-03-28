@@ -112,7 +112,7 @@ struct WorkoutScreen: View {
                     .focused($focusedField, equals: .customRestMinutes)
                 }
 
-                Button("Save Default") {
+                Button("Save") {
                     saveCustomRestDuration()
                 }
                 .buttonStyle(.bordered)
@@ -368,7 +368,6 @@ struct WorkoutScreen: View {
                 WorkoutSetRow(
                     set: set,
                     isWorkoutFinished: isFinished,
-                    focusedField: $focusedField,
                     onChange: { updatedSet, didCompleteNow in
                         model.updateSet(set.id) { current in
                             current = updatedSet
@@ -454,7 +453,7 @@ struct WorkoutScreen: View {
             Text(title)
                 .font(.subheadline.weight(.semibold))
                 .lineLimit(1)
-                .minimumScaleFactor(0.85)
+                .minimumScaleFactor(0.8)
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 10)
                 .padding(.horizontal, 8)
@@ -480,7 +479,7 @@ struct WorkoutScreen: View {
     }
 
     private func effortString(actual: Double, expected: Double) -> String {
-        String(format: "%.1f / 10 actual vs %.1f / 10 target", actual, expected)
+        "\(compactRPE(actual))/\(compactRPE(expected))"
     }
 
     private func percentString(from value: Double) -> String {
@@ -522,8 +521,8 @@ struct WorkoutScreen: View {
     }
 
     private var weekPages: [[Int]] {
-        stride(from: 0, to: model.weeks.count, by: 4).map { start in
-            Array(model.weeks[start..<min(start + 4, model.weeks.count)])
+        stride(from: 0, to: model.weeks.count, by: 3).map { start in
+            Array(model.weeks[start..<min(start + 3, model.weeks.count)])
         }
     }
 
@@ -542,14 +541,17 @@ struct WorkoutScreen: View {
         let remainingSeconds = seconds % 60
         return String(format: "%d:%02d", minutes, remainingSeconds)
     }
+
+    private func compactRPE(_ value: Double) -> String {
+        if value.rounded() == value {
+            return String(Int(value))
+        }
+        return String(format: "%.1f", value)
+    }
 }
 
 private enum WorkoutFieldFocus: Hashable {
     case customRestMinutes
-    case weight(UUID)
-    case reps(UUID)
-    case rpe(UUID)
-    case chainCount(UUID)
 }
 
 private struct ActiveRestTimer: Identifiable {
@@ -742,7 +744,7 @@ private struct CompletionSummarySheet: View {
     }
 
     private func effortString(actual: Double, expected: Double) -> String {
-        String(format: "%.1f / 10 actual vs %.1f / 10 target", actual, expected)
+        "\(compactRPE(actual))/\(compactRPE(expected))"
     }
 
     private func percentString(_ value: Double) -> String {
@@ -759,18 +761,23 @@ private struct CompletionSummarySheet: View {
         }
         return String(format: "%.2f", value)
     }
+
+    private func compactRPE(_ value: Double) -> String {
+        if value.rounded() == value {
+            return String(Int(value))
+        }
+        return String(format: "%.1f", value)
+    }
 }
 
 private struct WorkoutSetRow: View {
     let set: WorkoutSet
     let isWorkoutFinished: Bool
-    var focusedField: FocusState<WorkoutFieldFocus?>.Binding
     let onChange: (WorkoutSet, Bool) -> Void
     let onDelete: () -> Void
 
     private let insetBackground = Color(uiColor: .systemBackground)
     private var isLocked: Bool { self.isWorkoutFinished || self.set.completed || self.set.skipped }
-
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
@@ -796,33 +803,33 @@ private struct WorkoutSetRow: View {
                     title: "Weight",
                     readOnlyValue: weightDisplayValue
                 ) {
-                    TextField("Weight", value: doubleBinding(\.weight, maxValue: nil, autoCompleteWhenPositive: false), format: .number)
-                        .textFieldStyle(.roundedBorder)
-                        .keyboardType(.decimalPad)
-                        .focused(focusedField, equals: .weight(set.id))
-                        .disabled(isLocked)
+                    weightControl
                 }
 
                 labeledField(
                     title: "Reps",
                     readOnlyValue: set.reps.map(String.init) ?? "--"
                 ) {
-                    TextField("Reps", value: intBinding(\.reps, maxValue: 50), format: .number)
-                        .textFieldStyle(.roundedBorder)
-                        .keyboardType(.numberPad)
-                        .focused(focusedField, equals: .reps(set.id))
-                        .disabled(isLocked)
+                        integerControl(
+                            decrementLabel: "-",
+                            incrementLabel: "+",
+                            displayValue: set.reps.map(String.init) ?? "0"
+                        ) { delta in
+                            updateInt(\.reps, maxValue: 50, delta: delta)
+                        }
                 }
 
                 labeledField(
                     title: "RPE",
                     readOnlyValue: set.rpe.map { String(format: "%.1f", $0) } ?? "--"
                 ) {
-                    TextField("RPE", value: doubleBinding(\.rpe, maxValue: 10, autoCompleteWhenPositive: true), format: .number)
-                        .textFieldStyle(.roundedBorder)
-                        .keyboardType(.decimalPad)
-                        .focused(focusedField, equals: .rpe(set.id))
-                        .disabled(isLocked)
+                    decimalControl(
+                        displayValue: set.rpe.map(compactDisplay) ?? "0",
+                        decrementLabel: "-0.5",
+                        incrementLabel: "+0.5"
+                    ) { delta in
+                        updateDouble(\.rpe, maxValue: 10, delta: delta, autoCompleteWhenPositive: true)
+                    }
                 }
             }
 
@@ -838,7 +845,6 @@ private struct WorkoutSetRow: View {
                     updated.completed = newValue
                     if newValue {
                         updated.skipped = false
-                        focusedField.wrappedValue = nil
                     }
                     onChange(updated, didCompleteNow)
                 }
@@ -897,11 +903,13 @@ private struct WorkoutSetRow: View {
                         title: "Chains / Side",
                         readOnlyValue: "\(set.chainCountPerSide)"
                     ) {
-                        TextField("Chains / Side", value: intBinding(\.chainCountPerSide, maxValue: 20), format: .number)
-                            .textFieldStyle(.roundedBorder)
-                            .keyboardType(.numberPad)
-                            .focused(focusedField, equals: .chainCount(set.id))
-                            .disabled(isLocked)
+                        integerControl(
+                            decrementLabel: "-",
+                            incrementLabel: "+",
+                            displayValue: "\(set.chainCountPerSide)"
+                        ) { delta in
+                            updateNonOptionalInt(\.chainCountPerSide, maxValue: 20, delta: delta)
+                        }
                     }
 
                     metricDetail(title: "Chain Load", value: "\(Int(chainUnitWeightPerSide * 2 * Double(set.chainCountPerSide))) lb")
@@ -947,48 +955,112 @@ private struct WorkoutSetRow: View {
         .background(Color(uiColor: .secondarySystemBackground), in: RoundedRectangle(cornerRadius: 10))
     }
 
-    private func doubleBinding(
+    private var weightControl: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 6) {
+                smallValueButton(label: "-10") { updateDouble(\.weight, maxValue: nil, delta: -10, autoCompleteWhenPositive: false) }
+                smallValueButton(label: "-5") { updateDouble(\.weight, maxValue: nil, delta: -5, autoCompleteWhenPositive: false) }
+            }
+
+            Text(weightDisplayValue == "--" ? "0" : weightDisplayValue)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 10)
+                .background(Color(uiColor: .secondarySystemBackground), in: RoundedRectangle(cornerRadius: 8))
+
+            HStack(spacing: 6) {
+                smallValueButton(label: "+5") { updateDouble(\.weight, maxValue: nil, delta: 5, autoCompleteWhenPositive: false) }
+                smallValueButton(label: "+10") { updateDouble(\.weight, maxValue: nil, delta: 10, autoCompleteWhenPositive: false) }
+            }
+        }
+    }
+
+    private func integerControl(
+        decrementLabel: String,
+        incrementLabel: String,
+        displayValue: String,
+        action: @escaping (Int) -> Void
+    ) -> some View {
+        HStack(spacing: 6) {
+            smallValueButton(label: decrementLabel) {
+                action(-1)
+            }
+
+            Text(displayValue)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 10)
+                .background(Color(uiColor: .secondarySystemBackground), in: RoundedRectangle(cornerRadius: 8))
+
+            smallValueButton(label: incrementLabel) {
+                action(1)
+            }
+        }
+    }
+
+    private func decimalControl(displayValue: String, decrementLabel: String, incrementLabel: String, action: @escaping (Double) -> Void) -> some View {
+        HStack(spacing: 6) {
+            smallValueButton(label: decrementLabel) {
+                action(-0.5)
+            }
+
+            Text(displayValue)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 10)
+                .background(Color(uiColor: .secondarySystemBackground), in: RoundedRectangle(cornerRadius: 8))
+
+            smallValueButton(label: incrementLabel) {
+                action(0.5)
+            }
+        }
+    }
+
+    private func smallValueButton(label: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text(label)
+                .font(.footnote.weight(.semibold))
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 8)
+        }
+        .buttonStyle(.bordered)
+        .disabled(isLocked)
+    }
+
+    private func updateDouble(
         _ keyPath: WritableKeyPath<WorkoutSet, Double?>,
         maxValue: Double?,
+        delta: Double,
         autoCompleteWhenPositive: Bool
-    ) -> Binding<Double> {
-        Binding(
-            get: { set[keyPath: keyPath] ?? 0 },
-            set: { newValue in
-                var updated = set
-                let clampedValue = max(0, maxValue.map { min(newValue, $0) } ?? newValue)
-                let didCompleteNow = autoCompleteWhenPositive && clampedValue > 0 && !set.completed
-                updated[keyPath: keyPath] = clampedValue == 0 ? nil : clampedValue
-                if autoCompleteWhenPositive, clampedValue > 0 {
-                    updated.completed = true
-                    updated.skipped = false
-                    focusedField.wrappedValue = nil
-                }
-                onChange(updated, didCompleteNow)
-            }
-        )
+    ) {
+        var updated = set
+        let currentValue = updated[keyPath: keyPath] ?? 0
+        let nextValue = max(0, maxValue.map { min(currentValue + delta, $0) } ?? (currentValue + delta))
+        let didCompleteNow = autoCompleteWhenPositive && nextValue > 0 && !set.completed
+        updated[keyPath: keyPath] = nextValue == 0 ? nil : nextValue
+        if autoCompleteWhenPositive, nextValue > 0 {
+            updated.completed = true
+            updated.skipped = false
+        }
+        onChange(updated, didCompleteNow)
     }
 
-    private func intBinding(_ keyPath: WritableKeyPath<WorkoutSet, Int?>, maxValue: Int) -> Binding<Int> {
-        Binding(
-            get: { set[keyPath: keyPath] ?? 0 },
-            set: { newValue in
-                var updated = set
-                let clampedValue = max(0, min(newValue, maxValue))
-                updated[keyPath: keyPath] = clampedValue == 0 ? nil : clampedValue
-                onChange(updated, false)
-            }
-        )
+    private func updateInt(_ keyPath: WritableKeyPath<WorkoutSet, Int?>, maxValue: Int, delta: Int) {
+        var updated = set
+        let currentValue = updated[keyPath: keyPath] ?? 0
+        let nextValue = max(0, min(currentValue + delta, maxValue))
+        updated[keyPath: keyPath] = nextValue == 0 ? nil : nextValue
+        onChange(updated, false)
     }
 
-    private func intBinding(_ keyPath: WritableKeyPath<WorkoutSet, Int>, maxValue: Int) -> Binding<Int> {
-        Binding(
-            get: { set[keyPath: keyPath] },
-            set: { newValue in
-                var updated = set
-                updated[keyPath: keyPath] = max(0, min(newValue, maxValue))
-                onChange(updated, false)
-            }
-        )
+    private func updateNonOptionalInt(_ keyPath: WritableKeyPath<WorkoutSet, Int>, maxValue: Int, delta: Int) {
+        var updated = set
+        let currentValue = updated[keyPath: keyPath]
+        updated[keyPath: keyPath] = max(0, min(currentValue + delta, maxValue))
+        onChange(updated, false)
+    }
+
+    private func compactDisplay(_ value: Double) -> String {
+        if value.rounded() == value {
+            return String(Int(value))
+        }
+        return String(format: "%.1f", value)
     }
 }

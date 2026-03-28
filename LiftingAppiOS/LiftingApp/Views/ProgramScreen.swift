@@ -29,7 +29,7 @@ struct ProgramScreen: View {
         .navigationTitle("Program")
         .confirmationDialog("Start a New Program?", isPresented: $showingNewProgramDialog, titleVisibility: .visible) {
             Button("Archive Current Program and Restart") {
-                model.startNewProgram(archiveCurrent: true)
+                model.startNewProgram(archiveCurrent: true, startDate: model.programStartDate)
             }
             Button("Continue Current Program", role: .cancel) {}
         } message: {
@@ -52,11 +52,11 @@ struct ProgramScreen: View {
                 .listRowInsets(EdgeInsets())
                 .padding(.vertical, 4)
 
-            Button(model.activeRunHasActivity ? "Start New Program" : "Start Fresh Week 1 Program") {
+            Button(model.activeRunHasActivity ? "Start New Program" : "Start Fresh Program") {
                 if model.activeRunHasActivity {
                     showingNewProgramDialog = true
                 } else {
-                    model.startNewProgram(archiveCurrent: false)
+                    model.startNewProgram(archiveCurrent: false, startDate: model.programStartDate)
                 }
             }
             .font(.subheadline.weight(.semibold))

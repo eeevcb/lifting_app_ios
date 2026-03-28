@@ -28,8 +28,8 @@ Core user flows:
 
 ### Dashboard
 
-- estimated 1RM trend
-- weekly volume
+- estimated 1RM trend with separate Squat, Bench, and Deadlift lines
+- weekly volume as total completed tonnage
 - fatigue flags
 - target shifts
 - progression mix
@@ -100,6 +100,7 @@ Draft regeneration rules:
 - completed rows are preserved
 - skipped rows are preserved
 - unfinished generated rows can be refreshed when lift state changes
+- reopening a finished workout restores the saved finished rows for that day instead of replacing them with regenerated defaults
 
 ### Variation system
 
@@ -217,13 +218,16 @@ Persistence is file-backed JSON with migration support from earlier snapshot for
 
 ## Input and timer UX
 
-- Numeric workout fields should support tap-outside dismissal and a keyboard `Done` action
+- Workout-row numeric inputs should use button-based step controls instead of typed keyboard entry
+- Weight should use quick jump buttons, reps and chains should use integer steps, and RPE should use `0.5` increments
+- The custom rest-timer field remains the only typed numeric entry and should still support tap-outside dismissal plus keyboard `Done`
 - The workout screen is the place where the user sets the default rest duration
 - The workout screen should not edit the program start date
 - Day selection should use buttons instead of a dropdown
-- Week selection should use 4-at-a-time paged buttons with arrows and swipe
+- Week selection should use 3-at-a-time paged buttons with arrows and swipe
+- Week labels should render as `WK1`, `WK2`, and so on
 - Preset buttons update the saved default
-- Custom timer entry updates the saved default after confirmation
+- Custom timer entry updates the saved default after tapping `Save`
 - Marking a set completed can auto-start the timer when the user preference is enabled
 - The active timer is presented modally and can be canceled without changing the saved default
 - Skipped rows are locked and visually dimmed until unskipped

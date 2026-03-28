@@ -54,6 +54,9 @@ Variation lifts are seeded from the day's working-set target.
 - Week-based charts always render left-to-right across the full 12-week program
 - Missing weeks remain visible as gaps instead of collapsing the axis
 - Fatigue and target-shift charts include visible y-axis labels
+- Estimated 1RM trend is split into separate Squat, Bench, and Deadlift lines
+- Weekly volume is charted as total completed tonnage for the week
+- Variation usage only counts workouts where a variation set was actually completed
 
 ## Deload generation
 
@@ -66,18 +69,20 @@ Deload days now generate real working sets instead of `0x0`.
 
 ## Workout input behavior
 
-- Numeric workout fields use iPhone-friendly keyboard dismissal with tap-outside and a keyboard `Done` action
+- Workout-row weight, reps, RPE, and chain inputs use button-based step controls instead of typed keyboard entry
+- Weight uses quick jump buttons, reps and chains use integer steppers, and RPE uses `0.5` steps up to `10`
 - Completed set rows lock their values until the user explicitly unchecks completion
 - Updating estimated 1RM preserves completed and skipped rows in the current draft
 - Only unfinished generated rows are recalculated when 1RM changes
 - The workout screen uses button-based day selection and a paged week selector instead of dropdowns
+- The week selector shows `WK1`, `WK2`, etc. and pages three weeks at a time
 - Program start date is edited only from the Program tab, not from the Workout screen
 
 ## Rest timer behavior
 
 - The workout screen stores a saved default rest duration instead of treating presets as one-off timers
 - Quick picks `2`, `3`, and `5` minutes update the saved default immediately
-- Custom minutes update the saved default after confirmation
+- Custom minutes update the saved default after tapping `Save`
 - Auto-start-on-completion is persisted and defaults to `on`
 - When the timer starts, it appears in a modal that can be closed early without changing the saved default
 

@@ -13,8 +13,8 @@ struct DashboardScreen: View {
                 if model.completedSessions.isEmpty {
                     ContentUnavailableView("No Analytics Yet", systemImage: "chart.bar.xaxis", description: Text("Finish a workout to start generating real analytics."))
                 } else {
-                    trendCard(title: "Estimated 1RM Trend", points: model.estimatedOneRepMaxTrend, color: .blue)
-                    trendCard(title: "Weekly Volume", points: model.weeklyVolumeTrend, color: .green)
+                    liftTrendCard(title: "Estimated 1RM Trend", series: model.estimatedOneRepMaxTrendByLift)
+                    trendCard(title: "Weekly Volume (Tonnage)", points: model.weeklyVolumeTrend, color: .green)
                     trendCard(title: "Fatigue Flags", points: model.fatigueTimeline, color: .orange)
                     trendCard(title: "Target Shifts", points: model.targetAdjustmentTimeline, color: .pink, yAxisLabelMode: .percent)
                     recommendationCard
@@ -54,14 +54,14 @@ struct DashboardScreen: View {
                 }
                 .chartXScale(domain: 1...12)
                 .chartXAxis {
-                    AxisMarks(values: points.map(\.order)) { value in
+                    AxisMarks(values: Array(1...12)) { value in
                         if let week = value.as(Int.self) {
                             AxisValueLabel("W\(week)")
                         }
                     }
                 }
                 .chartYAxis {
-                    AxisMarks(position: .leading, values: .automatic(desiredCount: 5)) { value in
+                    AxisMarks(position: .leading, values: axisValues(for: points, mode: yAxisLabelMode)) { value in
                         AxisGridLine()
                         AxisTick()
                         if let numericValue = value.as(Double.self) {
@@ -75,6 +75,58 @@ struct DashboardScreen: View {
                     }
                 }
                 .frame(width: max(720, CGFloat(points.count) * 60), height: 220)
+            }
+        }
+        .padding()
+        .background(cardBackground, in: RoundedRectangle(cornerRadius: 18))
+    }
+
+    private func liftTrendCard(title: String, series: [LiftTrendSeries]) -> some View {
+        let plottedSeries = series.map { (series: $0, points: segmentedPoints(from: $0.points)) }
+
+        return VStack(alignment: .leading, spacing: 12) {
+            Text(title)
+                .font(.headline)
+
+            HStack(spacing: 12) {
+                ForEach(series) { item in
+                    Label(item.lift.displayName, systemImage: "circle.fill")
+                        .font(.caption)
+                        .foregroundStyle(color(for: item.lift))
+                }
+            }
+
+            ScrollView(.horizontal, showsIndicators: false) {
+                Chart {
+                    ForEach(Array(plottedSeries.enumerated()), id: \.offset) { _, item in
+                        ForEach(item.points) { point in
+                            LineMark(
+                                x: .value("Week", point.order),
+                                y: .value("Value", point.value),
+                                series: .value("Series", "\(item.series.lift.rawValue)-\(point.segment)")
+                            )
+                            .foregroundStyle(color(for: item.series.lift))
+
+                            PointMark(
+                                x: .value("Week", point.order),
+                                y: .value("Value", point.value)
+                            )
+                            .foregroundStyle(color(for: item.series.lift))
+                        }
+                    }
+                }
+                .chartXScale(domain: 1...12)
+                .chartXAxis {
+                    AxisMarks(values: Array(1...12)) { value in
+                        if let week = value.as(Int.self) {
+                            AxisValueLabel("W\(week)")
+                        }
+                    }
+                }
+                .chartYAxis {
+                    AxisMarks(position: .leading, values: .automatic(desiredCount: 5))
+                }
+                .frame(width: max(720, CGFloat(12) * 60), height: 240)
             }
         }
         .padding()
@@ -179,16 +231,22 @@ struct DashboardScreen: View {
             Text("Variation Usage")
                 .font(.headline)
 
-            ForEach(model.variationUsage.prefix(5)) { point in
-                HStack {
-                    Text(point.label)
-                        .lineLimit(1)
-                    Spacer()
-                    Text("\(Int(point.value ?? 0))")
-                        .foregroundStyle(.secondary)
+            if model.variationUsage.isEmpty {
+                Text("No completed variation work logged yet.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            } else {
+                ForEach(model.variationUsage.prefix(5)) { point in
+                    HStack {
+                        Text(point.label)
+                            .lineLimit(1)
+                        Spacer()
+                        Text("\(Int(point.value ?? 0))")
+                            .foregroundStyle(.secondary)
+                    }
+                    .padding()
+                    .background(insetBackground, in: RoundedRectangle(cornerRadius: 14))
                 }
-                .padding()
-                .background(insetBackground, in: RoundedRectangle(cornerRadius: 14))
             }
         }
         .padding()
@@ -203,6 +261,21 @@ struct DashboardScreen: View {
             .orange
         case .deload:
             .red
+        }
+    }
+
+    private func color(for lift: LiftType) -> Color {
+        switch lift {
+        case .squat:
+            return .blue
+        case .bench:
+            return .green
+        case .deadlift:
+            return .purple
+        case .shoulderPress:
+            return .orange
+        case .barbellRow:
+            return .brown
         }
     }
 
@@ -235,6 +308,20 @@ struct DashboardScreen: View {
         }
 
         return plotted
+    }
+
+    private func axisValues(for points: [AnalyticsPoint], mode: TrendAxisLabelMode) -> [Double] {
+        let values = points.compactMap(\.value)
+        guard let minValue = values.min(), let maxValue = values.max() else {
+            return mode == .percent ? [-10, 0, 10] : [0, 1, 2]
+        }
+        if minValue == maxValue {
+            return mode == .percent
+                ? [minValue - 5, minValue, minValue + 5]
+                : [minValue - 1, minValue, minValue + 1]
+        }
+        let midpoint = (minValue + maxValue) / 2
+        return [minValue, midpoint, maxValue]
     }
 }
 

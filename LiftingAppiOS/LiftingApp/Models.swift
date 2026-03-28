@@ -422,6 +422,12 @@ struct AnalyticsPoint: Identifiable, Hashable {
     let value: Double?
 }
 
+struct LiftTrendSeries: Identifiable, Hashable {
+    let id = UUID()
+    let lift: LiftType
+    let points: [AnalyticsPoint]
+}
+
 struct LiftAnalyticsSnapshot: Identifiable, Hashable {
     let id = UUID()
     let lift: LiftType
