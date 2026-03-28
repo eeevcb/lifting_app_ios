@@ -108,13 +108,37 @@ final class AppModel {
             }
     }
 
+    var targetAdjustmentTimeline: [AnalyticsPoint] {
+        completedSessions
+            .sorted { $0.performedOn < $1.performedOn }
+            .map { session in
+                AnalyticsPoint(label: "W\(session.programEntry.week)", value: session.fatigue.targetAdjustmentPercent * 100)
+            }
+    }
+
+    var recommendationCounts: [RecommendationCount] {
+        let grouped = Dictionary(grouping: completedSessions, by: \.fatigue.recommendation)
+        return EngineRecommendation.allCasesForDashboard.map { recommendation in
+            RecommendationCount(recommendation: recommendation, count: grouped[recommendation]?.count ?? 0)
+        }
+    }
+
     var liftSnapshots: [LiftAnalyticsSnapshot] {
         LiftType.allCases.map { lift in
             let sessions = completedSessions.filter { $0.programEntry.primaryLift == lift }
             let tonnage = sessions.reduce(0) { $0 + $1.summary.totalVolume }
             let bestEstimatedOneRepMax = sessions.compactMap(\.summary.bestEstimatedOneRepMax).max() ?? liftStates[lift]?.estimatedOneRepMax ?? 0
             let variationCount = sessions.filter { !($0.summary.variationUsed ?? "").isEmpty }.count
-            return LiftAnalyticsSnapshot(lift: lift, tonnage: tonnage, bestEstimatedOneRepMax: bestEstimatedOneRepMax, variationCount: variationCount)
+            let averageFatigueDelta = sessions.isEmpty ? 0 : sessions.reduce(0) { $0 + $1.fatigue.effortDelta } / Double(sessions.count)
+            let latestRecommendation = sessions.sorted { $0.performedOn > $1.performedOn }.first?.fatigue.recommendation ?? .hold
+            return LiftAnalyticsSnapshot(
+                lift: lift,
+                tonnage: tonnage,
+                bestEstimatedOneRepMax: bestEstimatedOneRepMax,
+                variationCount: variationCount,
+                averageFatigueDelta: averageFatigueDelta,
+                latestRecommendation: latestRecommendation
+            )
         }
     }
 
@@ -123,6 +147,13 @@ final class AppModel {
         return grouped
             .map { AnalyticsPoint(label: $0.key, value: Double($0.value.count)) }
             .sorted { $0.value > $1.value }
+    }
+
+    var recentFatigueSummaries: [CompletedSession] {
+        completedSessions
+            .sorted { $0.performedOn > $1.performedOn }
+            .prefix(5)
+            .map { $0 }
     }
 
     var groupedProgram: [(week: Int, entries: [ProgramEntry])] {

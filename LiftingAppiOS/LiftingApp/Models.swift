@@ -101,6 +101,10 @@ enum EngineRecommendation: String, Codable, Hashable {
     case deload
 }
 
+extension EngineRecommendation {
+    static let allCasesForDashboard: [EngineRecommendation] = [.hold, .reduce, .deload]
+}
+
 struct ProgramEntry: Identifiable, Codable, Hashable {
     let week: Int
     let day: TrainingDay
@@ -235,6 +239,14 @@ struct LiftAnalyticsSnapshot: Identifiable, Hashable {
     let tonnage: Double
     let bestEstimatedOneRepMax: Double
     let variationCount: Int
+    let averageFatigueDelta: Double
+    let latestRecommendation: EngineRecommendation
+}
+
+struct RecommendationCount: Identifiable, Hashable {
+    let id = UUID()
+    let recommendation: EngineRecommendation
+    let count: Int
 }
 
 struct AppSnapshot: Codable {

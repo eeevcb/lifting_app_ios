@@ -16,7 +16,10 @@ struct DashboardScreen: View {
                     trendCard(title: "Estimated 1RM Trend", points: model.estimatedOneRepMaxTrend, color: .blue)
                     trendCard(title: "Weekly Volume", points: model.weeklyVolumeTrend, color: .green)
                     trendCard(title: "Fatigue Flags", points: model.fatigueTimeline, color: .orange)
+                    trendCard(title: "Target Shifts", points: model.targetAdjustmentTimeline, color: .pink)
+                    recommendationCard
                     liftSummaryCard
+                    recentCallsCard
                     variationCard
                 }
             }
@@ -49,6 +52,26 @@ struct DashboardScreen: View {
         .background(cardBackground, in: RoundedRectangle(cornerRadius: 18))
     }
 
+    private var recommendationCard: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Recommendation Mix")
+                .font(.headline)
+
+            ForEach(model.recommendationCounts) { item in
+                HStack {
+                    Text(item.recommendation.rawValue.capitalized)
+                    Spacer()
+                    Text("\(item.count)")
+                        .foregroundStyle(color(for: item.recommendation))
+                }
+                .padding()
+                .background(insetBackground, in: RoundedRectangle(cornerRadius: 14))
+            }
+        }
+        .padding()
+        .background(cardBackground, in: RoundedRectangle(cornerRadius: 18))
+    }
+
     private var liftSummaryCard: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("By Lift")
@@ -62,6 +85,9 @@ struct DashboardScreen: View {
                         Text("Best e1RM \(Int(snapshot.bestEstimatedOneRepMax)) lb")
                             .font(.caption)
                             .foregroundStyle(.secondary)
+                        Text("Avg fatigue \(signedDelta(snapshot.averageFatigueDelta))")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
                     }
                     Spacer()
                     VStack(alignment: .trailing, spacing: 4) {
@@ -70,7 +96,46 @@ struct DashboardScreen: View {
                         Text("\(snapshot.variationCount) variation sessions")
                             .font(.caption)
                             .foregroundStyle(.secondary)
+                        Text(snapshot.latestRecommendation.rawValue.capitalized)
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(color(for: snapshot.latestRecommendation))
                     }
+                }
+                .padding()
+                .background(insetBackground, in: RoundedRectangle(cornerRadius: 14))
+            }
+        }
+        .padding()
+        .background(cardBackground, in: RoundedRectangle(cornerRadius: 18))
+    }
+
+    private var recentCallsCard: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Recent Engine Calls")
+                .font(.headline)
+
+            ForEach(model.recentFatigueSummaries) { session in
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack {
+                        Text("\(session.programEntry.primaryLift.displayName) - W\(session.programEntry.week)")
+                            .font(.subheadline.weight(.semibold))
+                        Spacer()
+                        Text(session.fatigue.recommendation.rawValue.capitalized)
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(color(for: session.fatigue.recommendation))
+                    }
+
+                    HStack {
+                        Text("Delta \(signedDelta(session.fatigue.effortDelta))")
+                        Spacer()
+                        Text("Target \(signedPercent(session.fatigue.targetAdjustmentPercent))")
+                    }
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
+                    Text(session.fatigue.backoffDecisionReason)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 }
                 .padding()
                 .background(insetBackground, in: RoundedRectangle(cornerRadius: 14))
@@ -99,5 +164,31 @@ struct DashboardScreen: View {
         }
         .padding()
         .background(cardBackground, in: RoundedRectangle(cornerRadius: 18))
+    }
+
+    private func color(for recommendation: EngineRecommendation) -> Color {
+        switch recommendation {
+        case .hold:
+            .green
+        case .reduce:
+            .orange
+        case .deload:
+            .red
+        }
+    }
+
+    private func signedDelta(_ value: Double) -> String {
+        if value > 0 {
+            return String(format: "+%.2f", value)
+        }
+        return String(format: "%.2f", value)
+    }
+
+    private func signedPercent(_ value: Double) -> String {
+        let percent = value * 100
+        if percent > 0 {
+            return String(format: "+%.0f%%", percent)
+        }
+        return String(format: "%.0f%%", percent)
     }
 }
