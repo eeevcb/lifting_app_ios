@@ -949,8 +949,8 @@ private struct WorkoutSetRow: View {
                                 setID: set.id,
                                 field: .rpe,
                                 title: "RPE",
-                                values: stride(from: 0.0, through: 10.0, by: 0.5).map { $0 },
-                                selectedValue: set.rpe ?? 0
+                                values: stride(from: 0.5, through: 10.0, by: 0.5).map { $0 },
+                                selectedValue: max(set.rpe ?? 0.5, 0.5)
                             )
                         )
                     }

@@ -344,7 +344,7 @@ final class AppModel {
     func updateEstimatedOneRepMax(for lift: LiftType, to value: Double) {
         guard value > 0 else { return }
         var state = liftStates[lift] ?? LiftState.defaults[lift]!
-        let roundedEstimatedOneRepMax = roundToIncrement(value)
+        let roundedEstimatedOneRepMax = Self.roundToIncrement(value)
         state.estimatedOneRepMax = roundedEstimatedOneRepMax
         state.trainingMax = min(roundedTrainingMax(from: roundedEstimatedOneRepMax), roundedEstimatedOneRepMax)
         liftStates[lift] = state
@@ -602,7 +602,7 @@ final class AppModel {
 
     private func roundedTrainingMax(from estimatedOneRepMax: Double) -> Double {
         let proposedTrainingMax = estimatedOneRepMax * 0.95
-        return min(roundToIncrement(max(45, proposedTrainingMax)), roundToIncrement(estimatedOneRepMax))
+        return min(Self.roundToIncrement(max(45, proposedTrainingMax)), Self.roundToIncrement(estimatedOneRepMax))
     }
 
     private func sessionDate(for entry: ProgramEntry, programStartDate: Date) -> Date {
@@ -779,8 +779,8 @@ final class AppModel {
         var normalized = LiftState.defaults
         for (lift, state) in states {
             var updated = state
-            updated.estimatedOneRepMax = roundToIncrement(max(45, updated.estimatedOneRepMax))
-            updated.trainingMax = min(roundToIncrement(max(45, updated.trainingMax)), updated.estimatedOneRepMax)
+            updated.estimatedOneRepMax = Self.roundToIncrement(max(45, updated.estimatedOneRepMax))
+            updated.trainingMax = min(Self.roundToIncrement(max(45, updated.trainingMax)), updated.estimatedOneRepMax)
             normalized[lift] = updated
         }
         return normalized

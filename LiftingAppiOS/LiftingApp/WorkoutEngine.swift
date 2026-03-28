@@ -553,7 +553,7 @@ enum WorkoutEngine {
     }
 
     private static func recalibratedEstimatedOneRepMax(from bestEstimatedOneRepMax: Double?, fatigue: FatigueAssessment, current: Double) -> Double {
-        let baseEstimatedOneRepMax = bestEstimatedOneRepMax ?? current
+        let baseEstimatedOneRepMax = max(bestEstimatedOneRepMax ?? current, current)
         let upwardBoost: Double
 
         switch fatigue.targetAdjustmentPercent {
@@ -567,7 +567,12 @@ enum WorkoutEngine {
             upwardBoost = 0
         }
 
-        return roundToIncrement(baseEstimatedOneRepMax * (1 + upwardBoost))
+        if upwardBoost > 0 {
+            let boostedCurrentEstimate = current * (1 + upwardBoost)
+            return roundToIncrement(max(baseEstimatedOneRepMax, boostedCurrentEstimate))
+        }
+
+        return roundToIncrement(baseEstimatedOneRepMax)
     }
 }
 
