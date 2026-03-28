@@ -19,7 +19,8 @@ struct PersistenceController {
         let settings = AppSettingsSnapshot(
             programStartDate: snapshot.programStartDate,
             selectedWeek: snapshot.selectedWeek,
-            selectedDay: snapshot.selectedDay
+            selectedDay: snapshot.selectedDay,
+            lastAutoSelectedDate: snapshot.lastAutoSelectedDate
         )
 
         let trainingData = TrainingDataSnapshot(
@@ -57,6 +58,7 @@ struct PersistenceController {
                 programStartDate: settings.programStartDate,
                 selectedWeek: settings.selectedWeek,
                 selectedDay: settings.selectedDay,
+                lastAutoSelectedDate: settings.lastAutoSelectedDate,
                 drafts: training.drafts,
                 completedSessions: training.completedSessions,
                 liftStates: training.liftStates

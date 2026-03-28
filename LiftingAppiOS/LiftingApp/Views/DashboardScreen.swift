@@ -54,12 +54,12 @@ struct DashboardScreen: View {
 
     private var recommendationCard: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Recommendation Mix")
+            Text("Progression Mix")
                 .font(.headline)
 
             ForEach(model.recommendationCounts) { item in
                 HStack {
-                    Text(item.recommendation.rawValue.capitalized)
+                    Text(item.recommendation.displayName)
                     Spacer()
                     Text("\(item.count)")
                         .foregroundStyle(color(for: item.recommendation))
@@ -96,7 +96,7 @@ struct DashboardScreen: View {
                         Text("\(snapshot.variationCount) variation sessions")
                             .font(.caption)
                             .foregroundStyle(.secondary)
-                        Text(snapshot.latestRecommendation.rawValue.capitalized)
+                        Text(snapshot.latestRecommendation.displayName)
                             .font(.caption.weight(.semibold))
                             .foregroundStyle(color(for: snapshot.latestRecommendation))
                     }
@@ -120,7 +120,7 @@ struct DashboardScreen: View {
                         Text("\(session.programEntry.primaryLift.displayName) - W\(session.programEntry.week)")
                             .font(.subheadline.weight(.semibold))
                         Spacer()
-                        Text(session.fatigue.recommendation.rawValue.capitalized)
+                        Text(session.fatigue.recommendation.displayName)
                             .font(.caption.weight(.semibold))
                             .foregroundStyle(color(for: session.fatigue.recommendation))
                     }

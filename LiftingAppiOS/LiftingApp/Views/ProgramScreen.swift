@@ -54,7 +54,7 @@ private struct ProgramRow: View {
                     }
                     Spacer()
                     if let completedSession {
-                        Text(completedSession.fatigue.recommendation.rawValue.capitalized)
+                        Text(completedSession.fatigue.recommendation.displayName)
                             .font(.caption.weight(.semibold))
                             .padding(.horizontal, 10)
                             .padding(.vertical, 6)

@@ -78,7 +78,7 @@ enum WorkoutSetType: String, CaseIterable, Codable, Hashable, Identifiable {
         switch self {
         case .warmup: "Warmup"
         case .ramp: "Ramp"
-        case .topSet: "Top Set"
+        case .topSet: "Working Set"
         case .backoff: "Backoff"
         case .variation: "Variation"
         }
@@ -99,6 +99,17 @@ enum EngineRecommendation: String, Codable, Hashable {
     case hold
     case reduce
     case deload
+
+    var displayName: String {
+        switch self {
+        case .hold:
+            "Progression"
+        case .reduce:
+            "Reduce"
+        case .deload:
+            "Deload"
+        }
+    }
 }
 
 extension EngineRecommendation {
@@ -253,6 +264,7 @@ struct AppSnapshot: Codable {
     var programStartDate: Date
     var selectedWeek: Int
     var selectedDay: TrainingDay
+    var lastAutoSelectedDate: Date?
     var drafts: [String: SessionDraft]
     var completedSessions: [CompletedSession]
     var liftStates: [LiftType: LiftState]
@@ -262,6 +274,7 @@ struct AppSettingsSnapshot: Codable {
     var programStartDate: Date
     var selectedWeek: Int
     var selectedDay: TrainingDay
+    var lastAutoSelectedDate: Date?
 }
 
 struct TrainingDataSnapshot: Codable {

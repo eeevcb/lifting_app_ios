@@ -31,6 +31,9 @@ struct ContentView: View {
             }
             .tag(AppTab.program)
         }
+        .onAppear {
+            model.refreshTodaySelectionIfNeeded()
+        }
     }
 }
 

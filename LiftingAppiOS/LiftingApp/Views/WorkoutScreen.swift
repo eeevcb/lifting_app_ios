@@ -106,7 +106,7 @@ struct WorkoutScreen: View {
 
             HStack {
                 metricBlock(title: "Fatigue", value: String(format: "%.1f", liftState.fatigueScore))
-                metricBlock(title: "Recommendation", value: liftState.lastRecommendation.rawValue.capitalized)
+                metricBlock(title: "Progression", value: liftState.lastRecommendation.displayName)
             }
 
             HStack {
@@ -143,7 +143,7 @@ struct WorkoutScreen: View {
 
                 HStack {
                     metricBlock(title: "Ramp", value: effortString(actual: fatigue.actualRampEffort, expected: fatigue.expectedRampEffort))
-                    metricBlock(title: "Top Set", value: effortString(actual: fatigue.actualTopSetEffort, expected: fatigue.expectedTopSetEffort))
+                    metricBlock(title: WorkoutSetType.topSet.displayName, value: effortString(actual: fatigue.actualTopSetEffort, expected: fatigue.expectedTopSetEffort))
                 }
 
                 HStack {
@@ -152,7 +152,7 @@ struct WorkoutScreen: View {
                 }
 
                 VStack(alignment: .leading, spacing: 8) {
-                    insightRow(label: "Recommendation", value: fatigue.recommendation.rawValue.capitalized)
+                    insightRow(label: "Progression", value: fatigue.recommendation.displayName)
                     insightRow(label: "Backoff", value: fatigue.skipBackoffWork ? "Skip" : "Keep")
                     insightRow(label: "Reason", value: fatigue.backoffDecisionReason)
                 }
@@ -322,7 +322,7 @@ private struct CompletionSummarySheet: View {
                     VStack(alignment: .leading, spacing: 8) {
                         Text("Workout Complete")
                             .font(.largeTitle.bold())
-                        Text("\(session.programEntry.primaryLift.displayName) • Week \(session.programEntry.week) \(session.programEntry.day.rawValue)")
+                        Text("\(session.programEntry.primaryLift.displayName) - Week \(session.programEntry.week) \(session.programEntry.day.rawValue)")
                             .foregroundStyle(.secondary)
                     }
 
@@ -368,13 +368,13 @@ private struct CompletionSummarySheet: View {
                 .font(.headline)
 
             HStack {
-                summaryMetric(title: "Recommendation", value: session.fatigue.recommendation.rawValue.capitalized)
+                summaryMetric(title: "Progression", value: session.fatigue.recommendation.displayName)
                 summaryMetric(title: "Target Shift", value: percentString(session.fatigue.targetAdjustmentPercent))
             }
 
             HStack {
                 summaryMetric(title: "Ramp Effort", value: effortString(actual: session.fatigue.actualRampEffort, expected: session.fatigue.expectedRampEffort))
-                summaryMetric(title: "Top Effort", value: effortString(actual: session.fatigue.actualTopSetEffort, expected: session.fatigue.expectedTopSetEffort))
+                summaryMetric(title: "\(WorkoutSetType.topSet.displayName) Effort", value: effortString(actual: session.fatigue.actualTopSetEffort, expected: session.fatigue.expectedTopSetEffort))
             }
 
             VStack(alignment: .leading, spacing: 8) {
@@ -453,6 +453,7 @@ private struct WorkoutSetRow: View {
     let onDelete: () -> Void
 
     private let insetBackground = Color(uiColor: .systemBackground)
+    private var isLocked: Bool { set.completed }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -465,29 +466,53 @@ private struct WorkoutSetRow: View {
                 }
             }
 
-            if set.setType == .variation {
-                Picker("Exercise", selection: stringBinding(\.exerciseName)) {
-                    ForEach(variationOptions, id: \.self) { option in
-                        Text(option).tag(option)
-                    }
-                }
-            } else {
-                Text(set.exerciseName)
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Exercise")
+                    .font(.caption)
                     .foregroundStyle(.secondary)
+
+                if set.setType == .variation, !isLocked {
+                    Picker("Exercise", selection: stringBinding(\.exerciseName)) {
+                        ForEach(variationOptions, id: \.self) { option in
+                            Text(option).tag(option)
+                        }
+                    }
+                    .labelsHidden()
+                } else {
+                    lockedValue(set.exerciseName)
+                }
             }
 
             HStack {
-                TextField("Weight", value: doubleBinding(\.weight), format: .number)
-                    .textFieldStyle(.roundedBorder)
-                    .keyboardType(.decimalPad)
+                labeledField(
+                    title: "Weight",
+                    readOnlyValue: set.weight.map { String(format: "%.1f", $0) } ?? "--"
+                ) {
+                    TextField("Weight", value: doubleBinding(\.weight, maxValue: nil, autoCompleteWhenPositive: false), format: .number)
+                        .textFieldStyle(.roundedBorder)
+                        .keyboardType(.decimalPad)
+                        .disabled(isLocked)
+                }
 
-                TextField("Reps", value: intBinding(\.reps), format: .number)
-                    .textFieldStyle(.roundedBorder)
-                    .keyboardType(.numberPad)
+                labeledField(
+                    title: "Reps",
+                    readOnlyValue: set.reps.map(String.init) ?? "--"
+                ) {
+                    TextField("Reps", value: intBinding(\.reps, maxValue: 50), format: .number)
+                        .textFieldStyle(.roundedBorder)
+                        .keyboardType(.numberPad)
+                        .disabled(isLocked)
+                }
 
-                TextField("RPE", value: doubleBinding(\.rpe), format: .number)
-                    .textFieldStyle(.roundedBorder)
-                    .keyboardType(.decimalPad)
+                labeledField(
+                    title: "RPE",
+                    readOnlyValue: set.rpe.map { String(format: "%.1f", $0) } ?? "--"
+                ) {
+                    TextField("RPE", value: doubleBinding(\.rpe, maxValue: 10, autoCompleteWhenPositive: true), format: .number)
+                        .textFieldStyle(.roundedBorder)
+                        .keyboardType(.decimalPad)
+                        .disabled(isLocked)
+                }
             }
 
             Toggle("Completed", isOn: Binding(
@@ -518,6 +543,31 @@ private struct WorkoutSetRow: View {
         .background(insetBackground, in: RoundedRectangle(cornerRadius: 16))
     }
 
+    @ViewBuilder
+    private func labeledField<Content: View>(title: String, readOnlyValue: String, @ViewBuilder content: () -> Content) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(title)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
+            if isLocked {
+                lockedValue(readOnlyValue)
+            } else {
+                content()
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func lockedValue(_ value: String) -> some View {
+        Text(value)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 10)
+            .background(Color(uiColor: .secondarySystemBackground), in: RoundedRectangle(cornerRadius: 8))
+            .foregroundStyle(.secondary)
+    }
+
     private func stringBinding(_ keyPath: WritableKeyPath<WorkoutSet, String>) -> Binding<String> {
         Binding(
             get: { set[keyPath: keyPath] },
@@ -529,23 +579,33 @@ private struct WorkoutSetRow: View {
         )
     }
 
-    private func doubleBinding(_ keyPath: WritableKeyPath<WorkoutSet, Double?>) -> Binding<Double> {
+    private func doubleBinding(
+        _ keyPath: WritableKeyPath<WorkoutSet, Double?>,
+        maxValue: Double?,
+        autoCompleteWhenPositive: Bool
+    ) -> Binding<Double> {
         Binding(
             get: { set[keyPath: keyPath] ?? 0 },
             set: { newValue in
                 var updated = set
-                updated[keyPath: keyPath] = newValue == 0 ? nil : newValue
+                let clampedValue = max(0, maxValue.map { min(newValue, $0) } ?? newValue)
+                updated[keyPath: keyPath] = clampedValue == 0 ? nil : clampedValue
+                if autoCompleteWhenPositive, clampedValue > 0 {
+                    updated.completed = true
+                    updated.skipped = false
+                }
                 onChange(updated)
             }
         )
     }
 
-    private func intBinding(_ keyPath: WritableKeyPath<WorkoutSet, Int?>) -> Binding<Int> {
+    private func intBinding(_ keyPath: WritableKeyPath<WorkoutSet, Int?>, maxValue: Int) -> Binding<Int> {
         Binding(
             get: { set[keyPath: keyPath] ?? 0 },
             set: { newValue in
                 var updated = set
-                updated[keyPath: keyPath] = newValue == 0 ? nil : newValue
+                let clampedValue = max(0, min(newValue, maxValue))
+                updated[keyPath: keyPath] = clampedValue == 0 ? nil : clampedValue
                 onChange(updated)
             }
         )

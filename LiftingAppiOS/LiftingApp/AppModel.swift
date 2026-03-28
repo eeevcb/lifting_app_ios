@@ -7,6 +7,7 @@ final class AppModel {
     var programStartDate: Date
     var selectedWeek: Int
     var selectedDay: TrainingDay
+    var lastAutoSelectedDate: Date?
     var drafts: [String: SessionDraft]
     var completedSessions: [CompletedSession]
     var liftStates: [LiftType: LiftState]
@@ -19,6 +20,7 @@ final class AppModel {
             programStartDate = snapshot.programStartDate
             selectedWeek = snapshot.selectedWeek
             selectedDay = snapshot.selectedDay
+            lastAutoSelectedDate = snapshot.lastAutoSelectedDate
             drafts = snapshot.drafts
             completedSessions = snapshot.completedSessions
             liftStates = snapshot.liftStates
@@ -27,12 +29,14 @@ final class AppModel {
             programStartDate = ProgramDefinition.defaultStartDate
             selectedWeek = ProgramDefinition.weeks().first ?? 1
             selectedDay = .friday
+            lastAutoSelectedDate = nil
             drafts = [:]
             completedSessions = []
             liftStates = LiftState.defaults
             lastCompletionSummary = nil
         }
 
+        autoSelectTodayIfNeeded()
         ensureDraftForSelection()
     }
 
@@ -177,6 +181,8 @@ final class AppModel {
 
     func updateProgramStartDate(_ date: Date) {
         programStartDate = date
+        lastAutoSelectedDate = nil
+        autoSelectTodayIfNeeded()
         persist()
     }
 
@@ -184,11 +190,9 @@ final class AppModel {
         guard value > 0 else { return }
         var state = liftStates[lift] ?? LiftState.defaults[lift]!
         state.estimatedOneRepMax = value
-        if state.trainingMax == 0 {
-            state.trainingMax = value * 0.95
-        }
+        state.trainingMax = roundedTrainingMax(from: value)
         liftStates[lift] = state
-        regenerateCurrentDraft()
+        regenerateUnfinishedDrafts(for: lift, using: state)
         persist()
     }
 
@@ -247,6 +251,10 @@ final class AppModel {
         lastCompletionSummary = nil
     }
 
+    func refreshTodaySelectionIfNeeded() {
+        autoSelectTodayIfNeeded()
+    }
+
     func sessionDate(for entry: ProgramEntry) -> Date {
         let calendar = Calendar.current
         let startWeekday = calendar.component(.weekday, from: programStartDate)
@@ -280,6 +288,7 @@ final class AppModel {
             programStartDate: programStartDate,
             selectedWeek: selectedWeek,
             selectedDay: selectedDay,
+            lastAutoSelectedDate: lastAutoSelectedDate,
             drafts: drafts,
             completedSessions: completedSessions,
             liftStates: liftStates
@@ -307,5 +316,38 @@ final class AppModel {
             return lhs.week > rhs.week
         }
         return lhs.day.weekdayIndex > rhs.day.weekdayIndex
+    }
+
+    private func autoSelectTodayIfNeeded(referenceDate: Date = .now) {
+        let calendar = Calendar.current
+        let today = calendar.startOfDay(for: referenceDate)
+        let alreadyAutoSelectedToday = lastAutoSelectedDate.map { calendar.isDate($0, inSameDayAs: today) } ?? false
+        guard !alreadyAutoSelectedToday, let todayEntry = todayEntry(referenceDate: today) else { return }
+
+        selectedWeek = todayEntry.week
+        selectedDay = todayEntry.day
+        lastAutoSelectedDate = today
+        ensureDraftForSelection()
+    }
+
+    private func todayEntry(referenceDate: Date = .now) -> ProgramEntry? {
+        let calendar = Calendar.current
+        let targetDate = calendar.startOfDay(for: referenceDate)
+        return ProgramDefinition.programDays.first { entry in
+            calendar.isDate(sessionDate(for: entry), inSameDayAs: targetDate)
+        }
+    }
+
+    private func regenerateUnfinishedDrafts(for lift: LiftType, using liftState: LiftState) {
+        for entry in ProgramDefinition.programDays where entry.primaryLift == lift {
+            guard completedSession(for: entry) == nil else { continue }
+            let variation = drafts[entry.key]?.selectedVariation
+            drafts[entry.key] = WorkoutEngine.makeDraft(for: entry, liftState: liftState, variation: variation)
+        }
+    }
+
+    private func roundedTrainingMax(from estimatedOneRepMax: Double) -> Double {
+        let proposedTrainingMax = estimatedOneRepMax * 0.95
+        return max(45, (proposedTrainingMax / 5).rounded() * 5)
     }
 }
