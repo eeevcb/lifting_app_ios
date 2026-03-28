@@ -77,6 +77,10 @@ final class AppModel {
         return completedSession(for: currentEntry)
     }
 
+    var isCurrentWorkoutFinished: Bool {
+        currentCompletedSession != nil
+    }
+
     var latestCompletedSessionForCurrentLift: CompletedSession? {
         guard let currentEntry else { return nil }
         return completedSessions
@@ -143,7 +147,7 @@ final class AppModel {
         let grouped = Dictionary(grouping: completedSessions.filter { !$0.variation.isEmpty }, by: \.variation)
         return grouped
             .map { AnalyticsPoint(order: $0.value.count, label: $0.key, value: Double($0.value.count)) }
-            .sorted { $0.value > $1.value }
+            .sorted { ($0.value ?? 0) > ($1.value ?? 0) }
     }
 
     var recentFatigueSummaries: [CompletedSession] {
@@ -365,13 +369,38 @@ final class AppModel {
 
     func finishWorkout() {
         guard let entry = currentEntry, let draft = drafts[entry.key], let liftState = currentLiftState else { return }
+        guard completedSession(for: entry) == nil else { return }
         let result = WorkoutEngine.completeSession(draft, liftState: liftState)
         liftStates[entry.primaryLift] = result.updatedLiftState
         activeRun.completedSessions.removeAll { $0.programEntry.key == entry.key }
         activeRun.completedSessions.append(result.completedSession)
         lastCompletionSummary = result.completedSession
-        drafts[entry.key] = WorkoutEngine.makeDraft(for: entry, liftState: result.updatedLiftState, variation: draft.selectedVariation)
+        drafts[entry.key] = SessionDraft(
+            id: draft.id,
+            programEntry: draft.programEntry,
+            selectedVariation: draft.selectedVariation,
+            sets: result.completedSession.sets,
+            generatedAt: .now
+        )
         refreshFutureDrafts(for: entry.primaryLift, after: entry, using: result.updatedLiftState)
+        persist()
+    }
+
+    func reviewCurrentWorkoutSummary() {
+        lastCompletionSummary = currentCompletedSession
+    }
+
+    func reopenCurrentWorkout() {
+        guard let entry = currentEntry else { return }
+        guard let session = completedSession(for: entry) else { return }
+
+        activeRun.completedSessions.removeAll { $0.id == session.id }
+        if lastCompletionSummary?.id == session.id {
+            lastCompletionSummary = nil
+        }
+
+        rebuildLiftStatesFromActiveRun()
+        rebuildDraftsAfterSessionChange(reopenedEntry: entry)
         persist()
     }
 
@@ -539,8 +568,9 @@ final class AppModel {
         reducer: (Int, [CompletedSession]) -> Double?
     ) -> [AnalyticsPoint] {
         let grouped = Dictionary(grouping: sessions, by: { $0.programEntry.week })
-        return grouped.keys.sorted().compactMap { week in
-            guard let weekSessions = grouped[week], let value = reducer(week, weekSessions) else { return nil }
+        return ProgramDefinition.weeks().map { week in
+            let weekSessions = grouped[week] ?? []
+            let value = weekSessions.isEmpty ? nil : reducer(week, weekSessions)
             return AnalyticsPoint(order: week, label: "W\(week)", value: value)
         }
     }
@@ -579,6 +609,49 @@ final class AppModel {
                 return existingSet
             }
             return regeneratedSet
+        }
+    }
+
+    private func rebuildLiftStatesFromActiveRun() {
+        var rebuiltStates = LiftState.defaults
+        let orderedSessions = activeRun.completedSessions.sorted { lhs, rhs in
+            if lhs.programEntry.week != rhs.programEntry.week {
+                return lhs.programEntry.week < rhs.programEntry.week
+            }
+            if lhs.programEntry.day.weekdayIndex != rhs.programEntry.day.weekdayIndex {
+                return lhs.programEntry.day.weekdayIndex < rhs.programEntry.day.weekdayIndex
+            }
+            return lhs.performedOn < rhs.performedOn
+        }
+
+        for session in orderedSessions {
+            let lift = session.programEntry.primaryLift
+            let current = rebuiltStates[lift] ?? LiftState.defaults[lift]!
+            rebuiltStates[lift] = WorkoutEngine.replayLiftState(from: current, session: session)
+        }
+
+        liftStates = rebuiltStates
+    }
+
+    private func rebuildDraftsAfterSessionChange(reopenedEntry: ProgramEntry) {
+        let existingSelections = drafts.mapValues(\.selectedVariation)
+        var rebuiltDrafts: [String: SessionDraft] = [:]
+
+        for entry in ProgramDefinition.programDays {
+            guard completedSession(for: entry) == nil else { continue }
+            let liftState = liftStates[entry.primaryLift] ?? LiftState.defaults[entry.primaryLift]!
+            let selection = existingSelections[entry.key]
+            rebuiltDrafts[entry.key] = WorkoutEngine.makeDraft(for: entry, liftState: liftState, variation: selection)
+        }
+
+        drafts = rebuiltDrafts
+        if drafts[reopenedEntry.key] == nil {
+            let liftState = liftStates[reopenedEntry.primaryLift] ?? LiftState.defaults[reopenedEntry.primaryLift]!
+            drafts[reopenedEntry.key] = WorkoutEngine.makeDraft(
+                for: reopenedEntry,
+                liftState: liftState,
+                variation: existingSelections[reopenedEntry.key]
+            )
         }
     }
 }

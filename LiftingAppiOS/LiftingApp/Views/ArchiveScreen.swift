@@ -107,7 +107,7 @@ private struct ArchiveRunDetailScreen: View {
                         archiveTrendCard(title: "Estimated 1RM Trend", points: model.estimatedOneRepMaxTrend(for: run), color: .blue)
                         archiveTrendCard(title: "Weekly Volume", points: model.weeklyVolumeTrend(for: run), color: .green)
                         archiveTrendCard(title: "Fatigue Flags", points: model.fatigueTimeline(for: run), color: .orange)
-                        archiveTrendCard(title: "Target Shifts", points: model.targetAdjustmentTimeline(for: run), color: .pink)
+                        archiveTrendCard(title: "Target Shifts", points: model.targetAdjustmentTimeline(for: run), color: .pink, yAxisLabelMode: .percent)
                         liftCalloutsCard(summary: model.summary(for: run))
                         historyCard(run: run)
                     }
@@ -131,37 +131,59 @@ private struct ArchiveRunDetailScreen: View {
         }
     }
 
-    private func archiveTrendCard(title: String, points: [AnalyticsPoint], color: Color) -> some View {
+    private func archiveTrendCard(title: String, points: [AnalyticsPoint], color: Color, yAxisLabelMode: ArchiveTrendAxisLabelMode = .numeric) -> some View {
+        let plottedPoints = segmentedPoints(from: points)
+
         VStack(alignment: .leading, spacing: 12) {
             Text(title)
                 .font(.headline)
 
-            if points.isEmpty {
+            if points.allSatisfy({ $0.value == nil }) {
                 Text("No chart data recorded for this archived run yet.")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             } else {
-                Chart(points) { point in
-                    LineMark(
-                        x: .value("Week", point.order),
-                        y: .value("Value", point.value)
-                    )
-                    .foregroundStyle(color)
+                ScrollView(.horizontal, showsIndicators: false) {
+                    Chart {
+                        ForEach(plottedPoints) { point in
+                            LineMark(
+                                x: .value("Week", point.order),
+                                y: .value("Value", point.value),
+                                series: .value("Segment", point.segment)
+                            )
+                            .foregroundStyle(color)
 
-                    PointMark(
-                        x: .value("Week", point.order),
-                        y: .value("Value", point.value)
-                    )
-                    .foregroundStyle(color)
-                }
-                .chartXAxis {
-                    AxisMarks(values: points.map(\.order)) { value in
-                        if let week = value.as(Int.self) {
-                            AxisValueLabel("W\(week)")
+                            PointMark(
+                                x: .value("Week", point.order),
+                                y: .value("Value", point.value)
+                            )
+                            .foregroundStyle(color)
                         }
                     }
+                    .chartXScale(domain: 1...12)
+                    .chartXAxis {
+                        AxisMarks(values: points.map(\.order)) { value in
+                            if let week = value.as(Int.self) {
+                                AxisValueLabel("W\(week)")
+                            }
+                        }
+                    }
+                    .chartYAxis {
+                        AxisMarks(position: .leading) { value in
+                            AxisGridLine()
+                            AxisTick()
+                            if let numericValue = value.as(Double.self) {
+                                switch yAxisLabelMode {
+                                case .numeric:
+                                    AxisValueLabel(numericValue.formatted(.number.precision(.fractionLength(0))))
+                                case .percent:
+                                    AxisValueLabel("\(Int(numericValue))%")
+                                }
+                            }
+                        }
+                    }
+                    .frame(width: max(720, CGFloat(points.count) * 60), height: 200)
                 }
-                .frame(height: 200)
             }
         }
         .padding()
@@ -235,4 +257,32 @@ private struct ArchiveRunDetailScreen: View {
             .red
         }
     }
+
+    private func segmentedPoints(from points: [AnalyticsPoint]) -> [ArchiveTrendPlotPoint] {
+        var segment = 0
+        var plotted: [ArchiveTrendPlotPoint] = []
+
+        for point in points {
+            guard let value = point.value else {
+                segment += 1
+                continue
+            }
+
+            plotted.append(ArchiveTrendPlotPoint(order: point.order, value: value, segment: segment))
+        }
+
+        return plotted
+    }
+}
+
+private enum ArchiveTrendAxisLabelMode {
+    case numeric
+    case percent
+}
+
+private struct ArchiveTrendPlotPoint: Identifiable {
+    let id = UUID()
+    let order: Int
+    let value: Double
+    let segment: Int
 }

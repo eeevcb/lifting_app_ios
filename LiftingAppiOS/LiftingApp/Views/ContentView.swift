@@ -8,6 +8,14 @@ struct ContentView: View {
 
         TabView(selection: $model.selectedTab) {
             NavigationStack {
+                ProgramScreen()
+            }
+            .tabItem {
+                Label("Program", systemImage: "calendar")
+            }
+            .tag(AppTab.program)
+
+            NavigationStack {
                 WorkoutScreen()
             }
             .tabItem {
@@ -22,14 +30,6 @@ struct ContentView: View {
                 Label("Dashboard", systemImage: "chart.xyaxis.line")
             }
             .tag(AppTab.dashboard)
-
-            NavigationStack {
-                ProgramScreen()
-            }
-            .tabItem {
-                Label("Program", systemImage: "calendar")
-            }
-            .tag(AppTab.program)
 
             NavigationStack {
                 ArchiveScreen()

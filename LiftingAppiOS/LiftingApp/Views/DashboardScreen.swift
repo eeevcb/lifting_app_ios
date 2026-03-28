@@ -16,7 +16,7 @@ struct DashboardScreen: View {
                     trendCard(title: "Estimated 1RM Trend", points: model.estimatedOneRepMaxTrend, color: .blue)
                     trendCard(title: "Weekly Volume", points: model.weeklyVolumeTrend, color: .green)
                     trendCard(title: "Fatigue Flags", points: model.fatigueTimeline, color: .orange)
-                    trendCard(title: "Target Shifts", points: model.targetAdjustmentTimeline, color: .pink)
+                    trendCard(title: "Target Shifts", points: model.targetAdjustmentTimeline, color: .pink, yAxisLabelMode: .percent)
                     recommendationCard
                     liftSummaryCard
                     recentCallsCard
@@ -28,32 +28,54 @@ struct DashboardScreen: View {
         .navigationTitle("Dashboard")
     }
 
-    private func trendCard(title: String, points: [AnalyticsPoint], color: Color) -> some View {
+    private func trendCard(title: String, points: [AnalyticsPoint], color: Color, yAxisLabelMode: TrendAxisLabelMode = .numeric) -> some View {
+        let plottedPoints = segmentedPoints(from: points)
+
         VStack(alignment: .leading, spacing: 12) {
             Text(title)
                 .font(.headline)
 
-            Chart(points) { point in
-                LineMark(
-                    x: .value("Week", point.order),
-                    y: .value("Value", point.value)
-                )
-                .foregroundStyle(color)
+            ScrollView(.horizontal, showsIndicators: false) {
+                Chart {
+                    ForEach(plottedPoints) { point in
+                        LineMark(
+                            x: .value("Week", point.order),
+                            y: .value("Value", point.value),
+                            series: .value("Segment", point.segment)
+                        )
+                        .foregroundStyle(color)
 
-                PointMark(
-                    x: .value("Week", point.order),
-                    y: .value("Value", point.value)
-                )
-                .foregroundStyle(color)
-            }
-            .chartXAxis {
-                AxisMarks(values: points.map(\.order)) { value in
-                    if let week = value.as(Int.self) {
-                        AxisValueLabel("W\(week)")
+                        PointMark(
+                            x: .value("Week", point.order),
+                            y: .value("Value", point.value)
+                        )
+                        .foregroundStyle(color)
                     }
                 }
+                .chartXScale(domain: 1...12)
+                .chartXAxis {
+                    AxisMarks(values: points.map(\.order)) { value in
+                        if let week = value.as(Int.self) {
+                            AxisValueLabel("W\(week)")
+                        }
+                    }
+                }
+                .chartYAxis {
+                    AxisMarks(position: .leading) { value in
+                        AxisGridLine()
+                        AxisTick()
+                        if let numericValue = value.as(Double.self) {
+                            switch yAxisLabelMode {
+                            case .numeric:
+                                AxisValueLabel(numericValue.formatted(.number.precision(.fractionLength(0))))
+                            case .percent:
+                                AxisValueLabel("\(Int(numericValue))%")
+                            }
+                        }
+                    }
+                }
+                .frame(width: max(720, CGFloat(points.count) * 60), height: 220)
             }
-            .frame(height: 220)
         }
         .padding()
         .background(cardBackground, in: RoundedRectangle(cornerRadius: 18))
@@ -162,7 +184,7 @@ struct DashboardScreen: View {
                     Text(point.label)
                         .lineLimit(1)
                     Spacer()
-                    Text("\(Int(point.value))")
+                    Text("\(Int(point.value ?? 0))")
                         .foregroundStyle(.secondary)
                 }
                 .padding()
@@ -198,4 +220,32 @@ struct DashboardScreen: View {
         }
         return String(format: "%.0f%%", percent)
     }
+
+    private func segmentedPoints(from points: [AnalyticsPoint]) -> [TrendPlotPoint] {
+        var segment = 0
+        var plotted: [TrendPlotPoint] = []
+
+        for point in points {
+            guard let value = point.value else {
+                segment += 1
+                continue
+            }
+
+            plotted.append(TrendPlotPoint(order: point.order, value: value, segment: segment))
+        }
+
+        return plotted
+    }
+}
+
+private enum TrendAxisLabelMode {
+    case numeric
+    case percent
+}
+
+private struct TrendPlotPoint: Identifiable {
+    let id = UUID()
+    let order: Int
+    let value: Double
+    let segment: Int
 }

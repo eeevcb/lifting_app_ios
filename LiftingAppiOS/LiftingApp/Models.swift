@@ -416,7 +416,7 @@ struct AnalyticsPoint: Identifiable, Hashable {
     let id = UUID()
     let order: Int
     let label: String
-    let value: Double
+    let value: Double?
 }
 
 struct LiftAnalyticsSnapshot: Identifiable, Hashable {

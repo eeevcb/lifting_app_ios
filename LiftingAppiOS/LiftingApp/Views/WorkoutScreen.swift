@@ -18,10 +18,10 @@ struct WorkoutScreen: View {
                     selectionCard
                     autoTargetsCard(entry: entry, liftState: liftState)
                     engineInsightsCard(entry: entry, liftState: liftState)
-                    variationCard(entry: entry, draft: draft)
-                    setActionsCard
-                    workoutLogCard(draft: draft)
-                    finishWorkoutCard(entry: entry, liftState: liftState)
+                    variationCard(entry: entry, draft: draft, isFinished: model.isCurrentWorkoutFinished)
+                    setActionsCard(isFinished: model.isCurrentWorkoutFinished)
+                    workoutLogCard(draft: draft, isFinished: model.isCurrentWorkoutFinished)
+                    finishWorkoutCard(entry: entry, liftState: liftState, isFinished: model.isCurrentWorkoutFinished)
                 } else {
                     ContentUnavailableView("No Workout", systemImage: "calendar.badge.exclamationmark", description: Text("There is no program entry for the selected day."))
                 }
@@ -267,7 +267,7 @@ struct WorkoutScreen: View {
         .background(cardBackground, in: RoundedRectangle(cornerRadius: 18))
     }
 
-    private func variationCard(entry: ProgramEntry, draft: SessionDraft) -> some View {
+    private func variationCard(entry: ProgramEntry, draft: SessionDraft, isFinished: Bool) -> some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Variation")
                 .font(.headline)
@@ -280,6 +280,7 @@ struct WorkoutScreen: View {
                     Text(option).tag(option)
                 }
             }
+            .disabled(isFinished)
 
             if let profile = ProgramDefinition.variationProfile(named: draft.selectedVariation.profileName, for: entry.primaryLift) {
                 Text(profile.helperText ?? "Variation defaults are seeded from the day’s working target and can still be edited set by set.")
@@ -293,9 +294,10 @@ struct WorkoutScreen: View {
         }
         .padding()
         .background(cardBackground, in: RoundedRectangle(cornerRadius: 18))
+        .opacity(isFinished ? 0.7 : 1)
     }
 
-    private var setActionsCard: some View {
+    private func setActionsCard(isFinished: Bool) -> some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Add Sets")
                 .font(.headline)
@@ -309,9 +311,11 @@ struct WorkoutScreen: View {
         }
         .padding()
         .background(cardBackground, in: RoundedRectangle(cornerRadius: 18))
+        .disabled(isFinished)
+        .opacity(isFinished ? 0.7 : 1)
     }
 
-    private func workoutLogCard(draft: SessionDraft) -> some View {
+    private func workoutLogCard(draft: SessionDraft, isFinished: Bool) -> some View {
         VStack(alignment: .leading, spacing: 16) {
             Text("Workout Log")
                 .font(.headline)
@@ -319,6 +323,7 @@ struct WorkoutScreen: View {
             ForEach(draft.sets.sortedForDisplay()) { set in
                 WorkoutSetRow(
                     set: set,
+                    isWorkoutFinished: isFinished,
                     focusedField: $focusedField,
                     onChange: { updatedSet, didCompleteNow in
                         model.updateSet(set.id) { current in
@@ -346,17 +351,34 @@ struct WorkoutScreen: View {
         .background(cardBackground, in: RoundedRectangle(cornerRadius: 18))
     }
 
-    private func finishWorkoutCard(entry: ProgramEntry, liftState: LiftState) -> some View {
+    private func finishWorkoutCard(entry: ProgramEntry, liftState: LiftState, isFinished: Bool) -> some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Finish Workout")
+            Text(isFinished ? "Workout Closed" : "Finish Workout")
                 .font(.headline)
-            Text("Completing a session runs the fatigue engine, updates \(entry.primaryLift.displayName) state, stores analytics, and seeds the next target.")
-                .foregroundStyle(.secondary)
-            Button("Finish Workout") {
-                model.finishWorkout()
+            Text(isFinished
+                 ? "This session is finished and locked. Review the summary or reopen it to make edits."
+                 : "Completing a session runs the fatigue engine, updates \(entry.primaryLift.displayName) state, stores analytics, and seeds the next target.")
+            .foregroundStyle(.secondary)
+
+            if isFinished {
+                HStack {
+                    Button("Review Summary") {
+                        model.reviewCurrentWorkoutSummary()
+                    }
+                    .buttonStyle(.borderedProminent)
+
+                    Button("Reopen Workout") {
+                        model.reopenCurrentWorkout()
+                    }
+                    .buttonStyle(.bordered)
+                }
+            } else {
+                Button("Finish Workout") {
+                    model.finishWorkout()
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(liftState.lastRecommendation == .deload ? .orange : .blue)
             }
-            .buttonStyle(.borderedProminent)
-            .tint(liftState.lastRecommendation == .deload ? .orange : .blue)
         }
         .padding()
         .background(cardBackground, in: RoundedRectangle(cornerRadius: 18))
@@ -662,12 +684,13 @@ private struct CompletionSummarySheet: View {
 
 private struct WorkoutSetRow: View {
     let set: WorkoutSet
+    let isWorkoutFinished: Bool
     @Binding var focusedField: WorkoutFieldFocus?
     let onChange: (WorkoutSet, Bool) -> Void
     let onDelete: () -> Void
 
     private let insetBackground = Color(uiColor: .systemBackground)
-    private var isLocked: Bool { self.set.completed }
+    private var isLocked: Bool { self.isWorkoutFinished || self.set.completed || self.set.skipped }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -678,6 +701,7 @@ private struct WorkoutSetRow: View {
                 Button(role: .destructive, action: onDelete) {
                     Image(systemName: "trash")
                 }
+                .disabled(isWorkoutFinished)
             }
 
             VStack(alignment: .leading, spacing: 6) {
@@ -740,6 +764,7 @@ private struct WorkoutSetRow: View {
                     onChange(updated, didCompleteNow)
                 }
             ))
+            .disabled(isWorkoutFinished)
 
             Toggle("Skipped", isOn: Binding(
                 get: { set.skipped },
@@ -752,9 +777,11 @@ private struct WorkoutSetRow: View {
                     onChange(updated, false)
                 }
             ))
+            .disabled(isWorkoutFinished)
         }
         .padding()
         .background(insetBackground, in: RoundedRectangle(cornerRadius: 16))
+        .opacity(set.skipped ? 0.6 : 1)
     }
 
     @ViewBuilder
