@@ -685,7 +685,7 @@ private struct CompletionSummarySheet: View {
 private struct WorkoutSetRow: View {
     let set: WorkoutSet
     let isWorkoutFinished: Bool
-    @Binding var focusedField: WorkoutFieldFocus?
+    var focusedField: FocusState<WorkoutFieldFocus?>.Binding
     let onChange: (WorkoutSet, Bool) -> Void
     let onDelete: () -> Void
 
@@ -720,7 +720,7 @@ private struct WorkoutSetRow: View {
                     TextField("Weight", value: doubleBinding(\.weight, maxValue: nil, autoCompleteWhenPositive: false), format: .number)
                         .textFieldStyle(.roundedBorder)
                         .keyboardType(.decimalPad)
-                        .focused($focusedField, equals: .weight(set.id))
+                        .focused(focusedField, equals: .weight(set.id))
                         .disabled(isLocked)
                 }
 
@@ -731,7 +731,7 @@ private struct WorkoutSetRow: View {
                     TextField("Reps", value: intBinding(\.reps, maxValue: 50), format: .number)
                         .textFieldStyle(.roundedBorder)
                         .keyboardType(.numberPad)
-                        .focused($focusedField, equals: .reps(set.id))
+                        .focused(focusedField, equals: .reps(set.id))
                         .disabled(isLocked)
                 }
 
@@ -742,7 +742,7 @@ private struct WorkoutSetRow: View {
                     TextField("RPE", value: doubleBinding(\.rpe, maxValue: 10, autoCompleteWhenPositive: true), format: .number)
                         .textFieldStyle(.roundedBorder)
                         .keyboardType(.decimalPad)
-                        .focused($focusedField, equals: .rpe(set.id))
+                        .focused(focusedField, equals: .rpe(set.id))
                         .disabled(isLocked)
                 }
             }
@@ -759,7 +759,7 @@ private struct WorkoutSetRow: View {
                     updated.completed = newValue
                     if newValue {
                         updated.skipped = false
-                        focusedField = nil
+                        focusedField.wrappedValue = nil
                     }
                     onChange(updated, didCompleteNow)
                 }
@@ -821,7 +821,7 @@ private struct WorkoutSetRow: View {
                         TextField("Chains / Side", value: intBinding(\.chainCountPerSide, maxValue: 20), format: .number)
                             .textFieldStyle(.roundedBorder)
                             .keyboardType(.numberPad)
-                            .focused($focusedField, equals: .chainCount(set.id))
+                            .focused(focusedField, equals: .chainCount(set.id))
                             .disabled(isLocked)
                     }
 
@@ -883,7 +883,7 @@ private struct WorkoutSetRow: View {
                 if autoCompleteWhenPositive, clampedValue > 0 {
                     updated.completed = true
                     updated.skipped = false
-                    focusedField = nil
+                    focusedField.wrappedValue = nil
                 }
                 onChange(updated, didCompleteNow)
             }
