@@ -258,6 +258,18 @@ struct AppSnapshot: Codable {
     var liftStates: [LiftType: LiftState]
 }
 
+struct AppSettingsSnapshot: Codable {
+    var programStartDate: Date
+    var selectedWeek: Int
+    var selectedDay: TrainingDay
+}
+
+struct TrainingDataSnapshot: Codable {
+    var drafts: [String: SessionDraft]
+    var completedSessions: [CompletedSession]
+    var liftStates: [LiftType: LiftState]
+}
+
 extension Array where Element == WorkoutSet {
     func sortedForDisplay() -> [WorkoutSet] {
         sorted { lhs, rhs in
