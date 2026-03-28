@@ -21,7 +21,8 @@ struct PersistenceController {
             selectedWeek: snapshot.selectedWeek,
             selectedDay: snapshot.selectedDay,
             lastAutoSelectedDate: snapshot.lastAutoSelectedDate,
-            lastUsedRestDurationSeconds: snapshot.lastUsedRestDurationSeconds
+            lastUsedRestDurationSeconds: snapshot.lastUsedRestDurationSeconds,
+            autoStartRestTimerOnCompletion: snapshot.autoStartRestTimerOnCompletion
         )
 
         let trainingData = TrainingDataSnapshot(
@@ -62,6 +63,7 @@ struct PersistenceController {
                     selectedDay: settings.selectedDay,
                     lastAutoSelectedDate: settings.lastAutoSelectedDate,
                     lastUsedRestDurationSeconds: settings.lastUsedRestDurationSeconds,
+                    autoStartRestTimerOnCompletion: settings.autoStartRestTimerOnCompletion,
                     drafts: training.drafts,
                     activeRun: training.activeRun,
                     archivedRuns: training.archivedRuns,
@@ -120,6 +122,7 @@ struct PersistenceController {
             selectedDay: selectedDay,
             lastAutoSelectedDate: lastAutoSelectedDate,
             lastUsedRestDurationSeconds: 180,
+            autoStartRestTimerOnCompletion: true,
             drafts: drafts,
             activeRun: ProgramRun(startedAt: programStartDate, programStartDate: programStartDate, completedSessions: completedSessions),
             archivedRuns: [],

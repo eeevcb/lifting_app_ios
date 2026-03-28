@@ -18,7 +18,7 @@ Core user flows:
 ### Workout
 
 - session header with current lift, week/day, and training max
-- rest timer with saved default duration
+- rest timer with saved default duration, auto-start preference, and modal countdown
 - program start / week / day selection
 - auto-target card with estimated 1RM, target, fatigue, progression, and training max
 - engine insights card with expected vs actual effort and next-target logic
@@ -89,6 +89,12 @@ Each draft stores:
 - selected variation
 - generated sets
 - generation timestamp
+
+Draft regeneration rules:
+
+- completed rows are preserved
+- skipped rows are preserved
+- unfinished generated rows can be refreshed when lift state changes
 
 ### Variation system
 
@@ -191,5 +197,16 @@ The app persists:
 - archived runs
 - lift states
 - drafts
+- saved default rest duration
+- auto-start rest-timer preference
 
 Persistence is file-backed JSON with migration support from earlier snapshot formats.
+
+## Input and timer UX
+
+- Numeric workout fields should support tap-outside dismissal and a keyboard `Done` action
+- The workout screen is the place where the user sets the default rest duration
+- Preset buttons update the saved default
+- Custom timer entry updates the saved default after confirmation
+- Marking a set completed can auto-start the timer when the user preference is enabled
+- The active timer is presented modally and can be canceled without changing the saved default

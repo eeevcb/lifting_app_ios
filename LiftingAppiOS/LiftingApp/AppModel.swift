@@ -9,6 +9,7 @@ final class AppModel {
     var selectedDay: TrainingDay
     var lastAutoSelectedDate: Date?
     var lastUsedRestDurationSeconds: Int
+    var autoStartRestTimerOnCompletion: Bool
     var drafts: [String: SessionDraft]
     var activeRun: ProgramRun
     var archivedRuns: [ProgramRun]
@@ -24,6 +25,7 @@ final class AppModel {
             selectedDay = snapshot.selectedDay
             lastAutoSelectedDate = snapshot.lastAutoSelectedDate
             lastUsedRestDurationSeconds = snapshot.lastUsedRestDurationSeconds
+            autoStartRestTimerOnCompletion = snapshot.autoStartRestTimerOnCompletion
             drafts = snapshot.drafts
             activeRun = snapshot.activeRun
             archivedRuns = snapshot.archivedRuns
@@ -35,6 +37,7 @@ final class AppModel {
             selectedDay = .friday
             lastAutoSelectedDate = nil
             lastUsedRestDurationSeconds = 180
+            autoStartRestTimerOnCompletion = true
             drafts = [:]
             activeRun = ProgramRun(startedAt: defaultStartDate, programStartDate: defaultStartDate)
             archivedRuns = []
@@ -385,6 +388,11 @@ final class AppModel {
         persist()
     }
 
+    func updateAutoStartRestTimerOnCompletion(_ enabled: Bool) {
+        autoStartRestTimerOnCompletion = enabled
+        persist()
+    }
+
     func startNewProgram(archiveCurrent: Bool, startDate: Date = .now) {
         let normalizedStartDate = Calendar.current.startOfDay(for: startDate)
 
@@ -448,6 +456,7 @@ final class AppModel {
             selectedDay: selectedDay,
             lastAutoSelectedDate: lastAutoSelectedDate,
             lastUsedRestDurationSeconds: lastUsedRestDurationSeconds,
+            autoStartRestTimerOnCompletion: autoStartRestTimerOnCompletion,
             drafts: drafts,
             activeRun: activeRun,
             archivedRuns: archivedRuns,
@@ -501,8 +510,14 @@ final class AppModel {
     private func regenerateUnfinishedDrafts(for lift: LiftType, using liftState: LiftState) {
         for entry in ProgramDefinition.programDays where entry.primaryLift == lift {
             guard completedSession(for: entry) == nil else { continue }
-            let variation = drafts[entry.key]?.selectedVariation
-            drafts[entry.key] = WorkoutEngine.makeDraft(for: entry, liftState: liftState, variation: variation)
+            if var existingDraft = drafts[entry.key] {
+                let regeneratedDraft = WorkoutEngine.makeDraft(for: entry, liftState: liftState, variation: existingDraft.selectedVariation)
+                existingDraft.sets = mergePreservingCompletedSets(existing: existingDraft.sets, regenerated: regeneratedDraft.sets)
+                existingDraft.generatedAt = regeneratedDraft.generatedAt
+                drafts[entry.key] = existingDraft
+            } else {
+                drafts[entry.key] = WorkoutEngine.makeDraft(for: entry, liftState: liftState, variation: nil)
+            }
         }
     }
 
@@ -553,6 +568,17 @@ final class AppModel {
                 averageFatigueDelta: averageFatigueDelta,
                 latestRecommendation: latestRecommendation
             )
+        }
+    }
+
+    private func mergePreservingCompletedSets(existing: [WorkoutSet], regenerated: [WorkoutSet]) -> [WorkoutSet] {
+        let existingByOrder = Dictionary(uniqueKeysWithValues: existing.map { ($0.setOrder, $0) })
+        return regenerated.map { regeneratedSet in
+            guard let existingSet = existingByOrder[regeneratedSet.setOrder] else { return regeneratedSet }
+            if existingSet.completed || existingSet.skipped {
+                return existingSet
+            }
+            return regeneratedSet
         }
     }
 }

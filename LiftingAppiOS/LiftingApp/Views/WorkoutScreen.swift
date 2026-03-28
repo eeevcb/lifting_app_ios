@@ -2,7 +2,8 @@ import SwiftUI
 
 struct WorkoutScreen: View {
     @Environment(AppModel.self) private var model
-    @State private var restTimerEndDate: Date?
+    @FocusState private var focusedField: WorkoutFieldFocus?
+    @State private var activeRestTimer: ActiveRestTimer?
     @State private var customRestMinutesText = ""
 
     private let cardBackground = Color(uiColor: .secondarySystemBackground)
@@ -27,10 +28,22 @@ struct WorkoutScreen: View {
             }
             .padding()
         }
+        .contentShape(Rectangle())
+        .onTapGesture {
+            focusedField = nil
+        }
         .navigationTitle("Workout")
         .onAppear {
             if customRestMinutesText.isEmpty {
                 customRestMinutesText = "\(max(1, model.lastUsedRestDurationSeconds / 60))"
+            }
+        }
+        .toolbar {
+            ToolbarItemGroup(placement: .keyboard) {
+                Spacer()
+                Button("Done") {
+                    focusedField = nil
+                }
             }
         }
         .sheet(
@@ -50,61 +63,70 @@ struct WorkoutScreen: View {
                 )
             }
         }
+        .sheet(item: $activeRestTimer) { timer in
+            RestTimerSheet(
+                timer: timer,
+                cancel: { activeRestTimer = nil }
+            )
+        }
     }
 
     private var restTimerCard: some View {
-        TimelineView(.periodic(from: .now, by: 1)) { context in
-            let remainingSeconds = remainingRestSeconds(at: context.date)
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Rest Timer")
+                .font(.headline)
 
-            VStack(alignment: .leading, spacing: 12) {
-                Text("Rest Timer")
-                    .font(.headline)
-
-                HStack {
-                    metricBlock(title: "Saved Rest", value: durationText(seconds: model.lastUsedRestDurationSeconds))
-                    metricBlock(title: "Status", value: timerStatusText(remainingSeconds: remainingSeconds))
-                }
-
-                HStack {
-                    timerButton(title: "2 Min", seconds: 120)
-                    timerButton(title: "3 Min", seconds: 180)
-                    timerButton(title: "5 Min", seconds: 300)
-                }
-
-                HStack(alignment: .bottom, spacing: 12) {
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text("Custom Minutes")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                        TextField("Minutes", text: Binding(
-                            get: { customRestMinutesText },
-                            set: { newValue in
-                                customRestMinutesText = newValue.filter(\.isNumber)
-                            }
-                        ))
-                        .textFieldStyle(.roundedBorder)
-                        .keyboardType(.numberPad)
-                    }
-
-                    Button("Start Custom") {
-                        let customMinutes = max(1, Int(customRestMinutesText) ?? max(1, model.lastUsedRestDurationSeconds / 60))
-                        let seconds = customMinutes * 60
-                        customRestMinutesText = "\(customMinutes)"
-                        startRestTimer(seconds: seconds)
-                    }
-                    .buttonStyle(.borderedProminent)
-
-                    if restTimerEndDate != nil {
-                        Button("Clear") {
-                            restTimerEndDate = nil
-                        }
-                        .buttonStyle(.bordered)
-                    }
-                }
+            HStack {
+                metricBlock(title: "Saved Default", value: durationText(seconds: model.lastUsedRestDurationSeconds))
+                metricBlock(title: "Auto Start", value: model.autoStartRestTimerOnCompletion ? "On" : "Off")
             }
-            .padding()
-            .background(cardBackground, in: RoundedRectangle(cornerRadius: 18))
+
+            HStack {
+                restPresetButton(minutes: 2)
+                restPresetButton(minutes: 3)
+                restPresetButton(minutes: 5)
+                Button("\(max(1, model.lastUsedRestDurationSeconds / 60)) Min") {
+                    focusedField = nil
+                }
+                .buttonStyle(.borderedProminent)
+                .frame(maxWidth: .infinity)
+            }
+
+            HStack(alignment: .bottom, spacing: 12) {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Custom Minutes")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    TextField("Minutes", text: Binding(
+                        get: { customRestMinutesText },
+                        set: { newValue in
+                            customRestMinutesText = newValue.filter(\.isNumber)
+                        }
+                    ))
+                    .textFieldStyle(.roundedBorder)
+                    .keyboardType(.numberPad)
+                    .focused($focusedField, equals: .customRestMinutes)
+                }
+
+                Button("Save Default") {
+                    saveCustomRestDuration()
+                }
+                .buttonStyle(.bordered)
+
+                Button("Start") {
+                    focusedField = nil
+                    presentRestTimer(seconds: model.lastUsedRestDurationSeconds)
+                }
+                .buttonStyle(.borderedProminent)
+            }
+
+            Toggle("Automatically start timer on workout completion", isOn: Binding(
+                get: { model.autoStartRestTimerOnCompletion },
+                set: { model.updateAutoStartRestTimerOnCompletion($0) }
+            ))
         }
+        .padding()
+        .background(cardBackground, in: RoundedRectangle(cornerRadius: 18))
     }
 
     private func sessionHeader(entry: ProgramEntry, liftState: LiftState) -> some View {
@@ -297,9 +319,14 @@ struct WorkoutScreen: View {
             ForEach(draft.sets.sortedForDisplay()) { set in
                 WorkoutSetRow(
                     set: set,
-                    onChange: { updatedSet in
+                    focusedField: $focusedField,
+                    onChange: { updatedSet, didCompleteNow in
                         model.updateSet(set.id) { current in
                             current = updatedSet
+                        }
+                        if didCompleteNow, model.autoStartRestTimerOnCompletion {
+                            focusedField = nil
+                            presentRestTimer(seconds: model.lastUsedRestDurationSeconds)
                         }
                     },
                     onDelete: {
@@ -386,31 +413,105 @@ struct WorkoutScreen: View {
         return String(format: "%.2f", value)
     }
 
-    private func timerButton(title: String, seconds: Int) -> some View {
-        Button(title) {
-            startRestTimer(seconds: seconds)
+    private func restPresetButton(minutes: Int) -> some View {
+        Button("\(minutes) Min") {
+            focusedField = nil
+            let seconds = minutes * 60
+            model.updateLastUsedRestDuration(seconds: seconds)
+            customRestMinutesText = "\(minutes)"
         }
         .buttonStyle(.bordered)
         .frame(maxWidth: .infinity)
     }
 
-    private func startRestTimer(seconds: Int) {
+    private func saveCustomRestDuration() {
+        let customMinutes = max(1, Int(customRestMinutesText) ?? max(1, model.lastUsedRestDurationSeconds / 60))
+        let seconds = customMinutes * 60
+        customRestMinutesText = "\(customMinutes)"
+        focusedField = nil
         model.updateLastUsedRestDuration(seconds: seconds)
-        restTimerEndDate = Date().addingTimeInterval(TimeInterval(seconds))
     }
 
-    private func remainingRestSeconds(at date: Date) -> Int? {
-        guard let restTimerEndDate else { return nil }
-        let remaining = Int(restTimerEndDate.timeIntervalSince(date).rounded())
-        return max(0, remaining)
+    private func presentRestTimer(seconds: Int) {
+        activeRestTimer = ActiveRestTimer(seconds: seconds)
     }
 
-    private func timerStatusText(remainingSeconds: Int?) -> String {
-        guard let remainingSeconds else { return "Ready" }
-        if remainingSeconds == 0 {
-            return "Done"
+    private func durationText(seconds: Int) -> String {
+        let minutes = seconds / 60
+        let remainingSeconds = seconds % 60
+        return String(format: "%d:%02d", minutes, remainingSeconds)
+    }
+}
+
+private enum WorkoutFieldFocus: Hashable {
+    case customRestMinutes
+    case weight(UUID)
+    case reps(UUID)
+    case rpe(UUID)
+    case chainCount(UUID)
+}
+
+private struct ActiveRestTimer: Identifiable {
+    let id = UUID()
+    let startedAt: Date
+    let durationSeconds: Int
+
+    init(seconds: Int) {
+        self.startedAt = .now
+        self.durationSeconds = seconds
+    }
+
+    var endDate: Date {
+        startedAt.addingTimeInterval(TimeInterval(durationSeconds))
+    }
+}
+
+private struct RestTimerSheet: View {
+    let timer: ActiveRestTimer
+    let cancel: () -> Void
+
+    var body: some View {
+        NavigationStack {
+            TimelineView(.periodic(from: .now, by: 1)) { context in
+                let remainingSeconds = max(0, Int(timer.endDate.timeIntervalSince(context.date).rounded()))
+
+                VStack(spacing: 24) {
+                    Text("Rest Timer")
+                        .font(.largeTitle.bold())
+
+                    Text(durationText(seconds: remainingSeconds))
+                        .font(.system(size: 64, weight: .bold, design: .rounded))
+                        .monospacedDigit()
+
+                    Text(remainingSeconds == 0 ? "Rest complete" : "Timer is running")
+                        .foregroundStyle(.secondary)
+
+                    VStack(spacing: 12) {
+                        Button(remainingSeconds == 0 ? "Close" : "Cancel Timer", action: cancel)
+                            .buttonStyle(.borderedProminent)
+
+                        if remainingSeconds > 0 {
+                            Text("Closing early stops this timer only and keeps your saved default unchanged.")
+                                .font(.footnote)
+                                .foregroundStyle(.secondary)
+                                .multilineTextAlignment(.center)
+                        }
+                    }
+
+                    Spacer()
+                }
+                .padding()
+                .navigationTitle("Rest")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Button("Close", action: cancel)
+                    }
+                }
+            }
         }
-        return durationText(seconds: remainingSeconds)
+        .presentationDetents([.medium])
+        .presentationDragIndicator(.visible)
     }
 
     private func durationText(seconds: Int) -> String {
@@ -561,11 +662,12 @@ private struct CompletionSummarySheet: View {
 
 private struct WorkoutSetRow: View {
     let set: WorkoutSet
-    let onChange: (WorkoutSet) -> Void
+    @Binding var focusedField: WorkoutFieldFocus?
+    let onChange: (WorkoutSet, Bool) -> Void
     let onDelete: () -> Void
 
     private let insetBackground = Color(uiColor: .systemBackground)
-    private var isLocked: Bool { set.completed }
+    private var isLocked: Bool { self.set.completed }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -594,6 +696,7 @@ private struct WorkoutSetRow: View {
                     TextField("Weight", value: doubleBinding(\.weight, maxValue: nil, autoCompleteWhenPositive: false), format: .number)
                         .textFieldStyle(.roundedBorder)
                         .keyboardType(.decimalPad)
+                        .focused($focusedField, equals: .weight(set.id))
                         .disabled(isLocked)
                 }
 
@@ -604,6 +707,7 @@ private struct WorkoutSetRow: View {
                     TextField("Reps", value: intBinding(\.reps, maxValue: 50), format: .number)
                         .textFieldStyle(.roundedBorder)
                         .keyboardType(.numberPad)
+                        .focused($focusedField, equals: .reps(set.id))
                         .disabled(isLocked)
                 }
 
@@ -614,6 +718,7 @@ private struct WorkoutSetRow: View {
                     TextField("RPE", value: doubleBinding(\.rpe, maxValue: 10, autoCompleteWhenPositive: true), format: .number)
                         .textFieldStyle(.roundedBorder)
                         .keyboardType(.decimalPad)
+                        .focused($focusedField, equals: .rpe(set.id))
                         .disabled(isLocked)
                 }
             }
@@ -626,11 +731,13 @@ private struct WorkoutSetRow: View {
                 get: { set.completed },
                 set: { newValue in
                     var updated = set
+                    let didCompleteNow = newValue && !set.completed
                     updated.completed = newValue
                     if newValue {
                         updated.skipped = false
+                        focusedField = nil
                     }
-                    onChange(updated)
+                    onChange(updated, didCompleteNow)
                 }
             ))
 
@@ -642,7 +749,7 @@ private struct WorkoutSetRow: View {
                     if newValue {
                         updated.completed = false
                     }
-                    onChange(updated)
+                    onChange(updated, false)
                 }
             ))
         }
@@ -687,6 +794,7 @@ private struct WorkoutSetRow: View {
                         TextField("Chains / Side", value: intBinding(\.chainCountPerSide, maxValue: 20), format: .number)
                             .textFieldStyle(.roundedBorder)
                             .keyboardType(.numberPad)
+                            .focused($focusedField, equals: .chainCount(set.id))
                             .disabled(isLocked)
                     }
 
@@ -743,12 +851,14 @@ private struct WorkoutSetRow: View {
             set: { newValue in
                 var updated = set
                 let clampedValue = max(0, maxValue.map { min(newValue, $0) } ?? newValue)
+                let didCompleteNow = autoCompleteWhenPositive && clampedValue > 0 && !set.completed
                 updated[keyPath: keyPath] = clampedValue == 0 ? nil : clampedValue
                 if autoCompleteWhenPositive, clampedValue > 0 {
                     updated.completed = true
                     updated.skipped = false
+                    focusedField = nil
                 }
-                onChange(updated)
+                onChange(updated, didCompleteNow)
             }
         )
     }
@@ -760,7 +870,7 @@ private struct WorkoutSetRow: View {
                 var updated = set
                 let clampedValue = max(0, min(newValue, maxValue))
                 updated[keyPath: keyPath] = clampedValue == 0 ? nil : clampedValue
-                onChange(updated)
+                onChange(updated, false)
             }
         )
     }
@@ -771,7 +881,7 @@ private struct WorkoutSetRow: View {
             set: { newValue in
                 var updated = set
                 updated[keyPath: keyPath] = max(0, min(newValue, maxValue))
-                onChange(updated)
+                onChange(updated, false)
             }
         )
     }

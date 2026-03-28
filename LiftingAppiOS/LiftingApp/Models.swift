@@ -468,6 +468,7 @@ struct AppSnapshot: Codable {
     var selectedDay: TrainingDay
     var lastAutoSelectedDate: Date?
     var lastUsedRestDurationSeconds: Int
+    var autoStartRestTimerOnCompletion: Bool
     var drafts: [String: SessionDraft]
     var activeRun: ProgramRun
     var archivedRuns: [ProgramRun]
@@ -480,6 +481,7 @@ struct AppSettingsSnapshot: Codable {
     var selectedDay: TrainingDay
     var lastAutoSelectedDate: Date?
     var lastUsedRestDurationSeconds: Int
+    var autoStartRestTimerOnCompletion: Bool
 }
 
 struct TrainingDataSnapshot: Codable {

@@ -10,6 +10,7 @@ This folder contains the native SwiftUI version of the lifting app.
 - Updates lift state, training max, and future workout targets from completed sessions
 - Stores active program history plus archived program runs
 - Shows real dashboard analytics based on completed sessions
+- Uses a saved-default rest timer that can auto-start when sets are marked complete
 
 ## Engine logic
 
@@ -48,6 +49,21 @@ Deload days now generate real working sets instead of `0x0`.
 - Deadlift: `4 x 5 @ 60%`
 - Warmups stay lighter and simpler
 - Default backoff rows are not added on deload days
+
+## Workout input behavior
+
+- Numeric workout fields use iPhone-friendly keyboard dismissal with tap-outside and a keyboard `Done` action
+- Completed set rows lock their values until the user explicitly unchecks completion
+- Updating estimated 1RM preserves completed and skipped rows in the current draft
+- Only unfinished generated rows are recalculated when 1RM changes
+
+## Rest timer behavior
+
+- The workout screen stores a saved default rest duration instead of treating presets as one-off timers
+- Quick picks `2`, `3`, and `5` minutes update the saved default immediately
+- Custom minutes update the saved default after confirmation
+- Auto-start-on-completion is persisted and defaults to `on`
+- When the timer starts, it appears in a modal that can be closed early without changing the saved default
 
 ## Main files
 
