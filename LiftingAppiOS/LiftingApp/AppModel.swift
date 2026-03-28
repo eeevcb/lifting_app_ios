@@ -189,11 +189,20 @@ final class AppModel {
 
     var archiveOverview: ArchiveOverview {
         let sessions = archivedRuns.flatMap(\.completedSessions)
+        let bestByLift = LiftType.allCases.compactMap { lift -> ArchivedLiftBest? in
+            let best = sessions
+                .filter { $0.programEntry.primaryLift == lift }
+                .compactMap(\.summary.bestEstimatedOneRepMax)
+                .max() ?? 0
+            guard best > 0 else { return nil }
+            return ArchivedLiftBest(lift: lift, bestEstimatedOneRepMax: best)
+        }
         return ArchiveOverview(
             archivedProgramCount: archivedRuns.count,
             totalArchivedWorkouts: sessions.count,
             totalArchivedTonnage: sessions.reduce(0) { $0 + $1.summary.totalVolume },
-            bestArchivedEstimatedOneRepMax: sessions.compactMap(\.summary.bestEstimatedOneRepMax).max() ?? 0
+            bestArchivedEstimatedOneRepMax: sessions.compactMap(\.summary.bestEstimatedOneRepMax).max() ?? 0,
+            bestEstimatedOneRepMaxByLift: bestByLift
         )
     }
 

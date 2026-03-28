@@ -32,6 +32,27 @@ struct ArchiveScreen: View {
                     overviewMetric(title: "Tonnage", value: "\(Int(model.archiveOverview.totalArchivedTonnage)) lb")
                     overviewMetric(title: "Best e1RM", value: model.archiveOverview.bestArchivedEstimatedOneRepMax > 0 ? "\(Int(model.archiveOverview.bestArchivedEstimatedOneRepMax)) lb" : "--")
                 }
+
+                if !model.archiveOverview.bestEstimatedOneRepMaxByLift.isEmpty {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Best e1RM by Lift")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+
+                        ForEach(model.archiveOverview.bestEstimatedOneRepMaxByLift) { item in
+                            HStack {
+                                Text(item.lift.displayName)
+                                Spacer()
+                                Text("\(Int(item.bestEstimatedOneRepMax)) lb")
+                                    .foregroundStyle(.secondary)
+                            }
+                            .font(.subheadline)
+                            .padding(.vertical, 6)
+                        }
+                    }
+                    .padding()
+                    .background(Color(uiColor: .secondarySystemBackground), in: RoundedRectangle(cornerRadius: 14))
+                }
             }
             .padding(.vertical, 4)
         }
@@ -106,7 +127,7 @@ private struct ArchiveRunDetailScreen: View {
                         ProgramSummaryCard(summary: model.summary(for: run), isArchived: true)
                         archiveLiftTrendCard(title: "Estimated 1RM Trend", series: model.estimatedOneRepMaxTrendByLift(for: run))
                         archiveTrendCard(title: "Weekly Volume (Tonnage)", points: model.weeklyVolumeTrend(for: run), color: .green, yAxisLabelMode: .abbreviated)
-                        archiveTrendCard(title: "Fatigue Flags", points: model.fatigueTimeline(for: run), color: .orange)
+                        archiveTrendCard(title: "Fatigue Flags", points: model.fatigueTimeline(for: run), color: .orange, yAxisLabelMode: .fatigue)
                         archiveTrendCard(title: "Target Shifts", points: model.targetAdjustmentTimeline(for: run), color: .pink, yAxisLabelMode: .percent)
                         liftCalloutsCard(summary: model.summary(for: run))
                         historyCard(run: run)
@@ -181,11 +202,13 @@ private struct ArchiveRunDetailScreen: View {
                                     AxisValueLabel("\(Int(numericValue))%")
                                 case .abbreviated:
                                     AxisValueLabel(abbreviated(numericValue))
+                                case .fatigue:
+                                    AxisValueLabel(numericValue.formatted(.number.precision(.fractionLength(1))))
                                 }
                             }
                         }
                     }
-                    .frame(width: max(720, CGFloat(points.count) * 60), height: 200)
+                    .frame(width: max(720, CGFloat(points.count) * 60), height: yAxisLabelMode == .fatigue ? 240 : 200)
                 }
             }
         }
@@ -361,6 +384,8 @@ private struct ArchiveRunDetailScreen: View {
                 return [0, 1, 2]
             case .abbreviated:
                 return [0, 1000, 2000]
+            case .fatigue:
+                return [-1, 0, 1]
             }
         }
         if minValue == maxValue {
@@ -371,19 +396,52 @@ private struct ArchiveRunDetailScreen: View {
                 return [minValue - 1, minValue, minValue + 1]
             case .abbreviated:
                 return [max(0, minValue * 0.8), minValue, minValue * 1.2]
+            case .fatigue:
+                return [minValue - 0.5, minValue, minValue + 0.5]
             }
         }
-        let midpoint = (minValue + maxValue) / 2
-        return [minValue, midpoint, maxValue]
+        switch mode {
+        case .fatigue:
+            let roundedMin = floor(minValue)
+            let roundedMax = ceil(maxValue)
+            if roundedMin == roundedMax {
+                return [roundedMin - 0.5, roundedMin, roundedMin + 0.5]
+            }
+            return Array(stride(from: roundedMin, through: roundedMax, by: 1.0))
+        case .numeric, .percent, .abbreviated:
+            let midpoint = (minValue + maxValue) / 2
+            return [minValue, midpoint, maxValue]
+        }
     }
 
     private func chartDomain(for points: [AnalyticsPoint], mode: ArchiveTrendAxisLabelMode) -> ClosedRange<Double> {
         let values = points.compactMap(\.value)
         guard let minValue = values.min(), let maxValue = values.max() else {
-            return mode == .percent ? (-10)...10 : 0...100
+            switch mode {
+            case .percent:
+                return (-10)...10
+            case .fatigue:
+                return (-1.5)...1.5
+            case .numeric, .abbreviated:
+                return 0...100
+            }
         }
-        let padding = max((maxValue - minValue) * 0.15, mode == .percent ? 2 : 25)
-        let lower = mode == .percent ? minValue - padding : max(0, minValue - padding)
+        let padding: Double
+        switch mode {
+        case .percent:
+            padding = max((maxValue - minValue) * 0.15, 2)
+        case .fatigue:
+            padding = max((maxValue - minValue) * 0.2, 0.4)
+        case .numeric, .abbreviated:
+            padding = max((maxValue - minValue) * 0.15, 25)
+        }
+        let lower: Double
+        switch mode {
+        case .percent, .fatigue:
+            lower = minValue - padding
+        case .numeric, .abbreviated:
+            lower = max(0, minValue - padding)
+        }
         return lower...(maxValue + padding)
     }
 
@@ -412,6 +470,7 @@ private enum ArchiveTrendAxisLabelMode {
     case numeric
     case percent
     case abbreviated
+    case fatigue
 }
 
 private struct ArchiveTrendPlotPoint: Identifiable {

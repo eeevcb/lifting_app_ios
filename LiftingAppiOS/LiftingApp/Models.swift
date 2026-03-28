@@ -469,6 +469,13 @@ struct ArchiveOverview: Hashable {
     let totalArchivedWorkouts: Int
     let totalArchivedTonnage: Double
     let bestArchivedEstimatedOneRepMax: Double
+    let bestEstimatedOneRepMaxByLift: [ArchivedLiftBest]
+}
+
+struct ArchivedLiftBest: Identifiable, Hashable {
+    let id = UUID()
+    let lift: LiftType
+    let bestEstimatedOneRepMax: Double
 }
 
 struct AppSnapshot: Codable {

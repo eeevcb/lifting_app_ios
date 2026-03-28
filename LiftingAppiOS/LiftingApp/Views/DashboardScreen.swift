@@ -15,7 +15,7 @@ struct DashboardScreen: View {
                 } else {
                     liftTrendCard(title: "Estimated 1RM Trend", series: model.estimatedOneRepMaxTrendByLift)
                     trendCard(title: "Weekly Volume (Tonnage)", points: model.weeklyVolumeTrend, color: .green, yAxisLabelMode: .abbreviated)
-                    trendCard(title: "Fatigue Flags", points: model.fatigueTimeline, color: .orange)
+                    trendCard(title: "Fatigue Flags", points: model.fatigueTimeline, color: .orange, yAxisLabelMode: .fatigue)
                     trendCard(title: "Target Shifts", points: model.targetAdjustmentTimeline, color: .pink, yAxisLabelMode: .percent)
                     recommendationCard
                     liftSummaryCard
@@ -73,11 +73,13 @@ struct DashboardScreen: View {
                                 AxisValueLabel("\(Int(numericValue))%")
                             case .abbreviated:
                                 AxisValueLabel(abbreviated(numericValue))
+                            case .fatigue:
+                                AxisValueLabel(numericValue.formatted(.number.precision(.fractionLength(1))))
                             }
                         }
                     }
                 }
-                .frame(width: max(720, CGFloat(points.count) * 60), height: 220)
+                .frame(width: max(720, CGFloat(points.count) * 60), height: yAxisLabelMode == .fatigue ? 240 : 220)
             }
         }
         .padding()
@@ -330,6 +332,8 @@ struct DashboardScreen: View {
                 return [0, 1, 2]
             case .abbreviated:
                 return [0, 1000, 2000]
+            case .fatigue:
+                return [-1, 0, 1]
             }
         }
         if minValue == maxValue {
@@ -340,19 +344,52 @@ struct DashboardScreen: View {
                 return [minValue - 1, minValue, minValue + 1]
             case .abbreviated:
                 return [max(0, minValue * 0.8), minValue, minValue * 1.2]
+            case .fatigue:
+                return [minValue - 0.5, minValue, minValue + 0.5]
             }
         }
-        let midpoint = (minValue + maxValue) / 2
-        return [minValue, midpoint, maxValue]
+        switch mode {
+        case .fatigue:
+            let roundedMin = floor(minValue)
+            let roundedMax = ceil(maxValue)
+            if roundedMin == roundedMax {
+                return [roundedMin - 0.5, roundedMin, roundedMin + 0.5]
+            }
+            return Array(stride(from: roundedMin, through: roundedMax, by: 1.0))
+        case .numeric, .percent, .abbreviated:
+            let midpoint = (minValue + maxValue) / 2
+            return [minValue, midpoint, maxValue]
+        }
     }
 
     private func chartDomain(for points: [AnalyticsPoint], mode: TrendAxisLabelMode) -> ClosedRange<Double> {
         let values = points.compactMap(\.value)
         guard let minValue = values.min(), let maxValue = values.max() else {
-            return mode == .percent ? (-10)...10 : 0...100
+            switch mode {
+            case .percent:
+                return (-10)...10
+            case .fatigue:
+                return (-1.5)...1.5
+            case .numeric, .abbreviated:
+                return 0...100
+            }
         }
-        let padding = max((maxValue - minValue) * 0.15, mode == .percent ? 2 : 25)
-        let lower = mode == .percent ? minValue - padding : max(0, minValue - padding)
+        let padding: Double
+        switch mode {
+        case .percent:
+            padding = max((maxValue - minValue) * 0.15, 2)
+        case .fatigue:
+            padding = max((maxValue - minValue) * 0.2, 0.4)
+        case .numeric, .abbreviated:
+            padding = max((maxValue - minValue) * 0.15, 25)
+        }
+        let lower: Double
+        switch mode {
+        case .percent, .fatigue:
+            lower = minValue - padding
+        case .numeric, .abbreviated:
+            lower = max(0, minValue - padding)
+        }
         return lower...(maxValue + padding)
     }
 
@@ -381,6 +418,7 @@ private enum TrendAxisLabelMode {
     case numeric
     case percent
     case abbreviated
+    case fatigue
 }
 
 private struct TrendPlotPoint: Identifiable {
