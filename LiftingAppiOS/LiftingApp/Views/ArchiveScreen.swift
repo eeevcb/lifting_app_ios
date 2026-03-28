@@ -134,7 +134,7 @@ private struct ArchiveRunDetailScreen: View {
     private func archiveTrendCard(title: String, points: [AnalyticsPoint], color: Color, yAxisLabelMode: ArchiveTrendAxisLabelMode = .numeric) -> some View {
         let plottedPoints = segmentedPoints(from: points)
 
-        VStack(alignment: .leading, spacing: 12) {
+        return VStack(alignment: .leading, spacing: 12) {
             Text(title)
                 .font(.headline)
 

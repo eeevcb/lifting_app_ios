@@ -31,7 +31,7 @@ struct DashboardScreen: View {
     private func trendCard(title: String, points: [AnalyticsPoint], color: Color, yAxisLabelMode: TrendAxisLabelMode = .numeric) -> some View {
         let plottedPoints = segmentedPoints(from: points)
 
-        VStack(alignment: .leading, spacing: 12) {
+        return VStack(alignment: .leading, spacing: 12) {
             Text(title)
                 .font(.headline)
 
