@@ -4,6 +4,7 @@ enum AppTab: Hashable {
     case workout
     case dashboard
     case program
+    case archive
 }
 
 enum LiftType: String, CaseIterable, Codable, Hashable, Identifiable {
@@ -127,6 +128,7 @@ struct ProgramEntry: Identifiable, Codable, Hashable {
 
     var id: String { "\(week)-\(day.rawValue)-\(primaryLift.rawValue)" }
     var key: String { "\(week)-\(day.rawValue)" }
+
     var planLabel: String {
         plannedType == .workingSets ? "\(sets)x\(reps)" : plannedType.rawValue
     }
@@ -238,8 +240,35 @@ struct CompletedSession: Identifiable, Codable, Hashable {
     let nextTargetWeight: Double?
 }
 
+struct ProgramRun: Identifiable, Codable, Hashable {
+    let id: UUID
+    var startedAt: Date
+    var endedAt: Date?
+    var programStartDate: Date
+    var completedSessions: [CompletedSession]
+
+    init(
+        id: UUID = UUID(),
+        startedAt: Date = .now,
+        endedAt: Date? = nil,
+        programStartDate: Date,
+        completedSessions: [CompletedSession] = []
+    ) {
+        self.id = id
+        self.startedAt = startedAt
+        self.endedAt = endedAt
+        self.programStartDate = programStartDate
+        self.completedSessions = completedSessions
+    }
+
+    var hasActivity: Bool {
+        !completedSessions.isEmpty
+    }
+}
+
 struct AnalyticsPoint: Identifiable, Hashable {
     let id = UUID()
+    let order: Int
     let label: String
     let value: Double
 }
@@ -260,7 +289,61 @@ struct RecommendationCount: Identifiable, Hashable {
     let count: Int
 }
 
+struct RunLiftCallout: Identifiable, Hashable {
+    let id = UUID()
+    let lift: LiftType
+    let completedSessions: Int
+    let bestEstimatedOneRepMax: Double
+    let bestWorkingWeight: Double
+}
+
+struct ProgramRunSummary: Identifiable, Hashable {
+    let id: UUID
+    let startedAt: Date
+    let endedAt: Date?
+    let completedWorkoutCount: Int
+    let adherenceRate: Double
+    let totalTonnage: Double
+    let averageFatigueDelta: Double
+    let recommendationCounts: [RecommendationCount]
+    let liftCallouts: [RunLiftCallout]
+}
+
+struct ArchiveOverview: Hashable {
+    let archivedProgramCount: Int
+    let totalArchivedWorkouts: Int
+    let totalArchivedTonnage: Double
+    let bestArchivedEstimatedOneRepMax: Double
+}
+
 struct AppSnapshot: Codable {
+    var programStartDate: Date
+    var selectedWeek: Int
+    var selectedDay: TrainingDay
+    var lastAutoSelectedDate: Date?
+    var lastUsedRestDurationSeconds: Int
+    var drafts: [String: SessionDraft]
+    var activeRun: ProgramRun
+    var archivedRuns: [ProgramRun]
+    var liftStates: [LiftType: LiftState]
+}
+
+struct AppSettingsSnapshot: Codable {
+    var programStartDate: Date
+    var selectedWeek: Int
+    var selectedDay: TrainingDay
+    var lastAutoSelectedDate: Date?
+    var lastUsedRestDurationSeconds: Int
+}
+
+struct TrainingDataSnapshot: Codable {
+    var drafts: [String: SessionDraft]
+    var activeRun: ProgramRun
+    var archivedRuns: [ProgramRun]
+    var liftStates: [LiftType: LiftState]
+}
+
+struct LegacyAppSnapshot: Codable {
     var programStartDate: Date
     var selectedWeek: Int
     var selectedDay: TrainingDay
@@ -270,14 +353,14 @@ struct AppSnapshot: Codable {
     var liftStates: [LiftType: LiftState]
 }
 
-struct AppSettingsSnapshot: Codable {
+struct LegacyAppSettingsSnapshot: Codable {
     var programStartDate: Date
     var selectedWeek: Int
     var selectedDay: TrainingDay
     var lastAutoSelectedDate: Date?
 }
 
-struct TrainingDataSnapshot: Codable {
+struct LegacyTrainingDataSnapshot: Codable {
     var drafts: [String: SessionDraft]
     var completedSessions: [CompletedSession]
     var liftStates: [LiftType: LiftState]

@@ -20,12 +20,14 @@ struct PersistenceController {
             programStartDate: snapshot.programStartDate,
             selectedWeek: snapshot.selectedWeek,
             selectedDay: snapshot.selectedDay,
-            lastAutoSelectedDate: snapshot.lastAutoSelectedDate
+            lastAutoSelectedDate: snapshot.lastAutoSelectedDate,
+            lastUsedRestDurationSeconds: snapshot.lastUsedRestDurationSeconds
         )
 
         let trainingData = TrainingDataSnapshot(
             drafts: snapshot.drafts,
-            completedSessions: snapshot.completedSessions,
+            activeRun: snapshot.activeRun,
+            archivedRuns: snapshot.archivedRuns,
             liftStates: snapshot.liftStates
         )
 
@@ -51,17 +53,32 @@ struct PersistenceController {
 
             let settingsData = try Data(contentsOf: settingsURL)
             let trainingData = try Data(contentsOf: trainingDataURL)
-            let settings = try decoder.decode(AppSettingsSnapshot.self, from: settingsData)
-            let training = try decoder.decode(TrainingDataSnapshot.self, from: trainingData)
 
-            return AppSnapshot(
-                programStartDate: settings.programStartDate,
-                selectedWeek: settings.selectedWeek,
-                selectedDay: settings.selectedDay,
-                lastAutoSelectedDate: settings.lastAutoSelectedDate,
-                drafts: training.drafts,
-                completedSessions: training.completedSessions,
-                liftStates: training.liftStates
+            if let settings = try? decoder.decode(AppSettingsSnapshot.self, from: settingsData),
+               let training = try? decoder.decode(TrainingDataSnapshot.self, from: trainingData) {
+                return AppSnapshot(
+                    programStartDate: settings.programStartDate,
+                    selectedWeek: settings.selectedWeek,
+                    selectedDay: settings.selectedDay,
+                    lastAutoSelectedDate: settings.lastAutoSelectedDate,
+                    lastUsedRestDurationSeconds: settings.lastUsedRestDurationSeconds,
+                    drafts: training.drafts,
+                    activeRun: training.activeRun,
+                    archivedRuns: training.archivedRuns,
+                    liftStates: training.liftStates
+                )
+            }
+
+            let legacySettings = try decoder.decode(LegacyAppSettingsSnapshot.self, from: settingsData)
+            let legacyTraining = try decoder.decode(LegacyTrainingDataSnapshot.self, from: trainingData)
+            return migratedSnapshot(
+                programStartDate: legacySettings.programStartDate,
+                selectedWeek: legacySettings.selectedWeek,
+                selectedDay: legacySettings.selectedDay,
+                lastAutoSelectedDate: legacySettings.lastAutoSelectedDate,
+                drafts: legacyTraining.drafts,
+                completedSessions: legacyTraining.completedSessions,
+                liftStates: legacyTraining.liftStates
             )
         } catch {
             return nil
@@ -70,7 +87,44 @@ struct PersistenceController {
 
     private func loadLegacySnapshot() -> AppSnapshot? {
         guard let data = UserDefaults.standard.data(forKey: legacyStorageKey) else { return nil }
-        return try? JSONDecoder().decode(AppSnapshot.self, from: data)
+        let decoder = JSONDecoder()
+
+        if let snapshot = try? decoder.decode(AppSnapshot.self, from: data) {
+            return snapshot
+        }
+
+        guard let legacy = try? decoder.decode(LegacyAppSnapshot.self, from: data) else { return nil }
+        return migratedSnapshot(
+            programStartDate: legacy.programStartDate,
+            selectedWeek: legacy.selectedWeek,
+            selectedDay: legacy.selectedDay,
+            lastAutoSelectedDate: legacy.lastAutoSelectedDate,
+            drafts: legacy.drafts,
+            completedSessions: legacy.completedSessions,
+            liftStates: legacy.liftStates
+        )
+    }
+
+    private func migratedSnapshot(
+        programStartDate: Date,
+        selectedWeek: Int,
+        selectedDay: TrainingDay,
+        lastAutoSelectedDate: Date?,
+        drafts: [String: SessionDraft],
+        completedSessions: [CompletedSession],
+        liftStates: [LiftType: LiftState]
+    ) -> AppSnapshot {
+        AppSnapshot(
+            programStartDate: programStartDate,
+            selectedWeek: selectedWeek,
+            selectedDay: selectedDay,
+            lastAutoSelectedDate: lastAutoSelectedDate,
+            lastUsedRestDurationSeconds: 180,
+            drafts: drafts,
+            activeRun: ProgramRun(startedAt: programStartDate, programStartDate: programStartDate, completedSessions: completedSessions),
+            archivedRuns: [],
+            liftStates: liftStates
+        )
     }
 
     private func storageDirectory() throws -> URL {

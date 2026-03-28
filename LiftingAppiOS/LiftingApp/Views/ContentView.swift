@@ -30,6 +30,14 @@ struct ContentView: View {
                 Label("Program", systemImage: "calendar")
             }
             .tag(AppTab.program)
+
+            NavigationStack {
+                ArchiveScreen()
+            }
+            .tabItem {
+                Label("Archive", systemImage: "archivebox")
+            }
+            .tag(AppTab.archive)
         }
         .onAppear {
             model.refreshTodaySelectionIfNeeded()

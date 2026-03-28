@@ -2,6 +2,8 @@ import SwiftUI
 
 struct WorkoutScreen: View {
     @Environment(AppModel.self) private var model
+    @State private var restTimerEndDate: Date?
+    @State private var customRestMinutesText = ""
 
     private let cardBackground = Color(uiColor: .secondarySystemBackground)
     private let insetBackground = Color(uiColor: .systemBackground)
@@ -11,6 +13,7 @@ struct WorkoutScreen: View {
             VStack(alignment: .leading, spacing: 20) {
                 if let entry = model.currentEntry, let liftState = model.currentLiftState, let draft = model.currentDraft {
                     sessionHeader(entry: entry, liftState: liftState)
+                    restTimerCard
                     selectionCard
                     autoTargetsCard(entry: entry, liftState: liftState)
                     engineInsightsCard(entry: entry, liftState: liftState)
@@ -25,6 +28,11 @@ struct WorkoutScreen: View {
             .padding()
         }
         .navigationTitle("Workout")
+        .onAppear {
+            if customRestMinutesText.isEmpty {
+                customRestMinutesText = "\(max(1, model.lastUsedRestDurationSeconds / 60))"
+            }
+        }
         .sheet(
             isPresented: Binding(
                 get: { model.lastCompletionSummary != nil },
@@ -41,6 +49,61 @@ struct WorkoutScreen: View {
                     dismiss: model.dismissCompletionSummary
                 )
             }
+        }
+    }
+
+    private var restTimerCard: some View {
+        TimelineView(.periodic(from: .now, by: 1)) { context in
+            let remainingSeconds = remainingRestSeconds(at: context.date)
+
+            VStack(alignment: .leading, spacing: 12) {
+                Text("Rest Timer")
+                    .font(.headline)
+
+                HStack {
+                    metricBlock(title: "Saved Rest", value: durationText(seconds: model.lastUsedRestDurationSeconds))
+                    metricBlock(title: "Status", value: timerStatusText(remainingSeconds: remainingSeconds))
+                }
+
+                HStack {
+                    timerButton(title: "2 Min", seconds: 120)
+                    timerButton(title: "3 Min", seconds: 180)
+                    timerButton(title: "5 Min", seconds: 300)
+                }
+
+                HStack(alignment: .bottom, spacing: 12) {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Custom Minutes")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        TextField("Minutes", text: Binding(
+                            get: { customRestMinutesText },
+                            set: { newValue in
+                                customRestMinutesText = newValue.filter(\.isNumber)
+                            }
+                        ))
+                        .textFieldStyle(.roundedBorder)
+                        .keyboardType(.numberPad)
+                    }
+
+                    Button("Start Custom") {
+                        let customMinutes = max(1, Int(customRestMinutesText) ?? max(1, model.lastUsedRestDurationSeconds / 60))
+                        let seconds = customMinutes * 60
+                        customRestMinutesText = "\(customMinutes)"
+                        startRestTimer(seconds: seconds)
+                    }
+                    .buttonStyle(.borderedProminent)
+
+                    if restTimerEndDate != nil {
+                        Button("Clear") {
+                            restTimerEndDate = nil
+                        }
+                        .buttonStyle(.bordered)
+                    }
+                }
+            }
+            .padding()
+            .background(cardBackground, in: RoundedRectangle(cornerRadius: 18))
         }
     }
 
@@ -142,8 +205,8 @@ struct WorkoutScreen: View {
                 let fatigue = session.fatigue
 
                 HStack {
-                    metricBlock(title: "Ramp", value: effortString(actual: fatigue.actualRampEffort, expected: fatigue.expectedRampEffort))
-                    metricBlock(title: WorkoutSetType.topSet.displayName, value: effortString(actual: fatigue.actualTopSetEffort, expected: fatigue.expectedTopSetEffort))
+                    metricBlock(title: "Ramp Effort", value: effortString(actual: fatigue.actualRampEffort, expected: fatigue.expectedRampEffort))
+                    metricBlock(title: "\(WorkoutSetType.topSet.displayName) Effort", value: effortString(actual: fatigue.actualTopSetEffort, expected: fatigue.expectedTopSetEffort))
                 }
 
                 HStack {
@@ -158,6 +221,10 @@ struct WorkoutScreen: View {
                 }
                 .padding()
                 .background(insetBackground, in: RoundedRectangle(cornerRadius: 14))
+
+                Text("Effort compares the average recorded RPE for completed sets against the target RPE the engine expected for this phase.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
 
                 if session.programEntry.key != entry.key {
                     Text("Showing the latest completed \(session.programEntry.primaryLift.displayName) session until this workout is finished.")
@@ -292,7 +359,7 @@ struct WorkoutScreen: View {
     }
 
     private func effortString(actual: Double, expected: Double) -> String {
-        String(format: "%.1f / %.1f", actual, expected)
+        String(format: "%.1f actual vs %.1f expected", actual, expected)
     }
 
     private func percentString(from value: Double) -> String {
@@ -308,6 +375,39 @@ struct WorkoutScreen: View {
             return String(format: "+%.2f", value)
         }
         return String(format: "%.2f", value)
+    }
+
+    private func timerButton(title: String, seconds: Int) -> some View {
+        Button(title) {
+            startRestTimer(seconds: seconds)
+        }
+        .buttonStyle(.bordered)
+        .frame(maxWidth: .infinity)
+    }
+
+    private func startRestTimer(seconds: Int) {
+        model.updateLastUsedRestDuration(seconds: seconds)
+        restTimerEndDate = Date().addingTimeInterval(TimeInterval(seconds))
+    }
+
+    private func remainingRestSeconds(at date: Date) -> Int? {
+        guard let restTimerEndDate else { return nil }
+        let remaining = Int(restTimerEndDate.timeIntervalSince(date).rounded())
+        return max(0, remaining)
+    }
+
+    private func timerStatusText(remainingSeconds: Int?) -> String {
+        guard let remainingSeconds else { return "Ready" }
+        if remainingSeconds == 0 {
+            return "Done"
+        }
+        return durationText(seconds: remainingSeconds)
+    }
+
+    private func durationText(seconds: Int) -> String {
+        let minutes = seconds / 60
+        let remainingSeconds = seconds % 60
+        return String(format: "%d:%02d", minutes, remainingSeconds)
     }
 }
 
@@ -377,6 +477,10 @@ private struct CompletionSummarySheet: View {
                 summaryMetric(title: "\(WorkoutSetType.topSet.displayName) Effort", value: effortString(actual: session.fatigue.actualTopSetEffort, expected: session.fatigue.expectedTopSetEffort))
             }
 
+            Text("Ramp effort is the average recorded RPE from completed ramp sets against target ramp RPE. Working-set effort is the same comparison for completed working sets.")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+
             VStack(alignment: .leading, spacing: 8) {
                 detailRow(title: "Overall Delta", value: signedNumberString(session.fatigue.effortDelta))
                 detailRow(title: "Backoff", value: session.fatigue.skipBackoffWork ? "Skipped" : "Kept")
@@ -427,7 +531,7 @@ private struct CompletionSummarySheet: View {
     }
 
     private func effortString(actual: Double, expected: Double) -> String {
-        String(format: "%.1f / %.1f", actual, expected)
+        String(format: "%.1f actual vs %.1f expected", actual, expected)
     }
 
     private func percentString(_ value: Double) -> String {

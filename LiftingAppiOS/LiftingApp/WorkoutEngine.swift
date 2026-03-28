@@ -217,18 +217,25 @@ enum WorkoutEngine {
 
         let completedRampSets = draft.sets.filter { $0.completed && !$0.skipped && $0.setType == .ramp }
         let completedTopSets = draft.sets.filter { $0.completed && !$0.skipped && $0.setType == .topSet }
-        let actualRampEffort = completedRampSets.compactMap(\.rpe).average ?? expectedRampEffort
-        let actualTopSetEffort = completedTopSets.compactMap(\.rpe).average ?? expectedTopSetEffort
+        let rampRPEs = completedRampSets.compactMap(\.rpe)
+        let topSetRPEs = completedTopSets.compactMap(\.rpe)
+        let hasRampEffortData = !rampRPEs.isEmpty
+        let hasTopSetEffortData = !topSetRPEs.isEmpty
+        let hasAnyEffortData = hasRampEffortData || hasTopSetEffortData
+
+        let actualRampEffort = rampRPEs.average ?? expectedRampEffort
+        let actualTopSetEffort = topSetRPEs.average ?? expectedTopSetEffort
 
         let expectedEffort = (expectedRampEffort * 0.35) + (expectedTopSetEffort * 0.65)
         let actualEffort = weightedActualEffort(ramp: actualRampEffort, top: actualTopSetEffort, completedRampSets: completedRampSets.count, completedTopSets: completedTopSets.count)
         let effortDelta = actualEffort - expectedEffort
         let rampFatigue = actualRampEffort - expectedRampEffort
         let topSetFatigue = actualTopSetEffort - expectedTopSetEffort
-        let missedTopSet = draft.sets.contains { $0.setType == .topSet && ($0.skipped || !$0.completed) }
 
         let recommendation: EngineRecommendation
-        if missedTopSet || topSetFatigue >= 1.5 || effortDelta >= 1.25 {
+        if !hasAnyEffortData {
+            recommendation = .hold
+        } else if topSetFatigue >= 1.5 || effortDelta >= 1.25 {
             recommendation = .deload
         } else if topSetFatigue >= 0.75 || rampFatigue >= 0.75 || effortDelta >= 0.6 {
             recommendation = .reduce
@@ -236,25 +243,29 @@ enum WorkoutEngine {
             recommendation = .hold
         }
 
-        let skipBackoffWork = draft.sets.contains(where: { $0.setType == .backoff }) && (recommendation != .hold || topSetFatigue >= 0.5 || rampFatigue >= 1.0)
+        let skipBackoffWork = hasAnyEffortData
+            && draft.sets.contains(where: { $0.setType == .backoff })
+            && (recommendation != .hold || topSetFatigue >= 0.5 || rampFatigue >= 1.0)
         let targetAdjustmentPercent: Double
         if recommendation == .deload {
             targetAdjustmentPercent = -0.08
         } else if recommendation == .reduce {
             targetAdjustmentPercent = -0.03
-        } else if effortDelta <= -0.35 && !missedTopSet {
+        } else if hasAnyEffortData && effortDelta <= -0.35 {
             targetAdjustmentPercent = 0.02
         } else {
             targetAdjustmentPercent = 0
         }
 
         let decisionReason: String
-        if skipBackoffWork {
+        if !hasAnyEffortData {
+            decisionReason = "No RPE data was recorded, so progression stays neutral and backoff work is not automatically skipped."
+        } else if skipBackoffWork {
             decisionReason = recommendation == .deload
-                ? "Backoff work skipped because top-set fatigue was well above expectation."
-                : "Backoff work skipped because ramp or top-set effort was above target."
+                ? "Backoff work was skipped because working-set effort came in well above the expected target."
+                : "Backoff work was skipped because ramp or working-set effort came in above the expected target."
         } else {
-            decisionReason = "Backoff work remains in plan because fatigue stayed within range."
+            decisionReason = "Backoff work stays in plan because recorded effort stayed close to the expected target."
         }
 
         return FatigueAssessment(

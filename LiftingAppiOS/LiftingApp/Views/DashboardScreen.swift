@@ -35,16 +35,23 @@ struct DashboardScreen: View {
 
             Chart(points) { point in
                 LineMark(
-                    x: .value("Label", point.label),
+                    x: .value("Week", point.order),
                     y: .value("Value", point.value)
                 )
                 .foregroundStyle(color)
 
                 PointMark(
-                    x: .value("Label", point.label),
+                    x: .value("Week", point.order),
                     y: .value("Value", point.value)
                 )
                 .foregroundStyle(color)
+            }
+            .chartXAxis {
+                AxisMarks(values: points.map(\.order)) { value in
+                    if let week = value.as(Int.self) {
+                        AxisValueLabel("W\(week)")
+                    }
+                }
             }
             .frame(height: 220)
         }
