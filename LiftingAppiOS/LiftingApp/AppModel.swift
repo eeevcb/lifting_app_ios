@@ -51,6 +51,19 @@ final class AppModel {
         return drafts[currentEntry.key]
     }
 
+    var currentCompletedSession: CompletedSession? {
+        guard let currentEntry else { return nil }
+        return completedSession(for: currentEntry)
+    }
+
+    var latestCompletedSessionForCurrentLift: CompletedSession? {
+        guard let currentEntry else { return nil }
+        return completedSessions
+            .filter { $0.programEntry.primaryLift == currentEntry.primaryLift }
+            .sorted { $0.performedOn > $1.performedOn }
+            .first
+    }
+
     var currentSummary: SessionSummary? {
         guard let draft = currentDraft else { return nil }
         return SessionSummary(

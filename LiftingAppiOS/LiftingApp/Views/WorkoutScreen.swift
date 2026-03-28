@@ -13,6 +13,7 @@ struct WorkoutScreen: View {
                     sessionHeader(entry: entry, liftState: liftState)
                     selectionCard
                     autoTargetsCard(entry: entry, liftState: liftState)
+                    engineInsightsCard(entry: entry, liftState: liftState)
                     variationCard(entry: entry, draft: draft)
                     setActionsCard
                     workoutLogCard(draft: draft)
@@ -92,6 +93,11 @@ struct WorkoutScreen: View {
             }
 
             HStack {
+                metricBlock(title: "Training Max", value: "\(Int(liftState.trainingMax)) lb")
+                metricBlock(title: "Target Shift", value: percentString(from: liftState.lastTargetAdjustmentPercent))
+            }
+
+            HStack {
                 Text("Adjust \(entry.primaryLift.displayName) 1RM")
                 Spacer()
                 Stepper(
@@ -104,6 +110,47 @@ struct WorkoutScreen: View {
                     step: 5
                 )
                 .labelsHidden()
+            }
+        }
+        .padding()
+        .background(cardBackground, in: RoundedRectangle(cornerRadius: 18))
+    }
+
+    private func engineInsightsCard(entry: ProgramEntry, liftState: LiftState) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Engine Insights")
+                .font(.headline)
+
+            if let session = model.currentCompletedSession ?? model.latestCompletedSessionForCurrentLift {
+                let fatigue = session.fatigue
+
+                HStack {
+                    metricBlock(title: "Ramp", value: effortString(actual: fatigue.actualRampEffort, expected: fatigue.expectedRampEffort))
+                    metricBlock(title: "Top Set", value: effortString(actual: fatigue.actualTopSetEffort, expected: fatigue.expectedTopSetEffort))
+                }
+
+                HStack {
+                    metricBlock(title: "Overall Delta", value: signedNumberString(fatigue.effortDelta))
+                    metricBlock(title: "Next Target", value: session.nextTargetWeight.map { "\(Int($0)) lb" } ?? "--")
+                }
+
+                VStack(alignment: .leading, spacing: 8) {
+                    insightRow(label: "Recommendation", value: fatigue.recommendation.rawValue.capitalized)
+                    insightRow(label: "Backoff", value: fatigue.skipBackoffWork ? "Skip" : "Keep")
+                    insightRow(label: "Reason", value: fatigue.backoffDecisionReason)
+                }
+                .padding()
+                .background(insetBackground, in: RoundedRectangle(cornerRadius: 14))
+
+                if session.programEntry.key != entry.key {
+                    Text("Showing the latest completed \(session.programEntry.primaryLift.displayName) session until this workout is finished.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+            } else {
+                Text("Finish a workout to see how the engine compares expected and actual effort, decides on backoff work, and seeds the next target.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
             }
         }
         .padding()
@@ -214,6 +261,36 @@ struct WorkoutScreen: View {
                 .frame(maxWidth: .infinity)
         }
         .buttonStyle(.bordered)
+    }
+
+    private func insightRow(label: String, value: String) -> some View {
+        HStack(alignment: .top) {
+            Text(label)
+                .font(.subheadline.weight(.semibold))
+            Spacer(minLength: 12)
+            Text(value)
+                .multilineTextAlignment(.trailing)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    private func effortString(actual: Double, expected: Double) -> String {
+        String(format: "%.1f / %.1f", actual, expected)
+    }
+
+    private func percentString(from value: Double) -> String {
+        let percent = value * 100
+        if percent > 0 {
+            return String(format: "+%.0f%%", percent)
+        }
+        return String(format: "%.0f%%", percent)
+    }
+
+    private func signedNumberString(_ value: Double) -> String {
+        if value > 0 {
+            return String(format: "+%.2f", value)
+        }
+        return String(format: "%.2f", value)
     }
 }
 
