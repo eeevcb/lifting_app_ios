@@ -344,8 +344,9 @@ final class AppModel {
     func updateEstimatedOneRepMax(for lift: LiftType, to value: Double) {
         guard value > 0 else { return }
         var state = liftStates[lift] ?? LiftState.defaults[lift]!
-        state.estimatedOneRepMax = value
-        state.trainingMax = roundedTrainingMax(from: value)
+        let roundedEstimatedOneRepMax = roundToIncrement(value)
+        state.estimatedOneRepMax = roundedEstimatedOneRepMax
+        state.trainingMax = min(roundedTrainingMax(from: roundedEstimatedOneRepMax), roundedEstimatedOneRepMax)
         liftStates[lift] = state
         regenerateUnfinishedDrafts(for: lift, using: state)
         persist()
@@ -601,7 +602,7 @@ final class AppModel {
 
     private func roundedTrainingMax(from estimatedOneRepMax: Double) -> Double {
         let proposedTrainingMax = estimatedOneRepMax * 0.95
-        return max(45, (proposedTrainingMax / 5).rounded() * 5)
+        return min(roundToIncrement(max(45, proposedTrainingMax)), roundToIncrement(estimatedOneRepMax))
     }
 
     private func sessionDate(for entry: ProgramEntry, programStartDate: Date) -> Date {
@@ -777,8 +778,16 @@ final class AppModel {
     private static func normalizedLiftStates(_ states: [LiftType: LiftState]) -> [LiftType: LiftState] {
         var normalized = LiftState.defaults
         for (lift, state) in states {
-            normalized[lift] = state
+            var updated = state
+            updated.estimatedOneRepMax = roundToIncrement(max(45, updated.estimatedOneRepMax))
+            updated.trainingMax = min(roundToIncrement(max(45, updated.trainingMax)), updated.estimatedOneRepMax)
+            normalized[lift] = updated
         }
         return normalized
+    }
+
+    private static func roundToIncrement(_ value: Double, increment: Double = 5) -> Double {
+        guard value > 0 else { return 0 }
+        return max(increment, (value / increment).rounded() * increment)
     }
 }

@@ -241,7 +241,7 @@ struct WorkoutScreen: View {
                 .font(.headline)
 
             HStack {
-                metricBlock(title: "Estimated 1RM", value: "\(Int(liftState.estimatedOneRepMax)) lb")
+                metricBlock(title: "Estimated 1RM", value: "\(Int(roundedFivePoundValue(liftState.estimatedOneRepMax))) lb")
                 metricBlock(title: "Working Target", value: "\(Int(model.currentTargetWeight ?? 0)) lb")
             }
 
@@ -251,7 +251,7 @@ struct WorkoutScreen: View {
             }
 
             HStack {
-                metricBlock(title: "Training Max", value: "\(Int(liftState.trainingMax)) lb")
+                metricBlock(title: "Training Max", value: "\(Int(roundedFivePoundValue(liftState.trainingMax))) lb")
                 metricBlock(title: "Target Shift", value: percentString(from: model.currentTargetShiftPercent))
             }
 
@@ -259,9 +259,9 @@ struct WorkoutScreen: View {
                 Text("Adjust \(entry.primaryLift.displayName) 1RM")
                 Spacer()
                 Stepper(
-                    "\(Int(liftState.estimatedOneRepMax))",
+                    "\(Int(roundedFivePoundValue(liftState.estimatedOneRepMax)))",
                     value: Binding(
-                        get: { Int(liftState.estimatedOneRepMax) },
+                        get: { Int(roundedFivePoundValue(liftState.estimatedOneRepMax)) },
                         set: { model.updateEstimatedOneRepMax(for: entry.primaryLift, to: Double($0)) }
                     ),
                     in: 45...1000,
@@ -272,6 +272,11 @@ struct WorkoutScreen: View {
         }
         .padding()
         .background(cardBackground, in: RoundedRectangle(cornerRadius: 18))
+    }
+
+    private func roundedFivePoundValue(_ value: Double) -> Double {
+        guard value > 0 else { return 0 }
+        return max(5, (value / 5).rounded() * 5)
     }
 
     private func engineInsightsCard(entry: ProgramEntry, liftState: LiftState) -> some View {

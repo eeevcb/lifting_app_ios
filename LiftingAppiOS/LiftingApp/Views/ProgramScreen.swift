@@ -3,6 +3,7 @@ import SwiftUI
 struct ProgramScreen: View {
     @Environment(AppModel.self) private var model
     @State private var showingNewProgramDialog = false
+    @State private var expandedWeeks: Set<Int> = []
 
     var body: some View {
         List {
@@ -10,23 +11,45 @@ struct ProgramScreen: View {
             activeRunSection
 
             ForEach(model.groupedProgram, id: \.week) { group in
-                Section("Week \(group.week)") {
-                    ForEach(group.entries) { entry in
-                        ProgramRow(
-                            entry: entry,
-                            sessionDate: model.sessionDate(for: entry),
-                            isSelected: model.selectedWeek == entry.week && model.selectedDay == entry.day,
-                            completedSession: model.completedSession(for: entry),
-                            onSelect: {
-                                model.select(week: entry.week, day: entry.day)
-                                model.selectedTab = .workout
+                Section {
+                    DisclosureGroup(
+                        isExpanded: Binding(
+                            get: { expandedWeeks.contains(group.week) },
+                            set: { isExpanded in
+                                if isExpanded {
+                                    expandedWeeks.insert(group.week)
+                                } else {
+                                    expandedWeeks.remove(group.week)
+                                }
                             }
                         )
+                    ) {
+                        ForEach(group.entries) { entry in
+                            ProgramRow(
+                                entry: entry,
+                                sessionDate: model.sessionDate(for: entry),
+                                isSelected: model.selectedWeek == entry.week && model.selectedDay == entry.day,
+                                completedSession: model.completedSession(for: entry),
+                                onSelect: {
+                                    model.select(week: entry.week, day: entry.day)
+                                    expandedWeeks.insert(entry.week)
+                                    model.selectedTab = .workout
+                                }
+                            )
+                        }
+                    } label: {
+                        weekHeader(for: group.week)
                     }
                 }
             }
         }
         .navigationTitle("Program")
+        .onAppear {
+            initializeExpandedWeeksIfNeeded()
+        }
+        .onChange(of: model.selectedWeek) { _, newWeek in
+            expandedWeeks.insert(newWeek)
+        }
         .confirmationDialog("Start a New Program?", isPresented: $showingNewProgramDialog, titleVisibility: .visible) {
             Button("Archive Current Program and Restart") {
                 model.startNewProgram(archiveCurrent: true, startDate: model.programStartDate)
@@ -34,6 +57,22 @@ struct ProgramScreen: View {
             Button("Continue Current Program", role: .cancel) {}
         } message: {
             Text("This will move the current run into Archive and start a fresh Week 1 cycle using your current lift state.")
+        }
+    }
+
+    private func weekHeader(for week: Int) -> some View {
+        HStack {
+            Text("Week \(week)")
+                .font(.headline)
+            Spacer()
+            if week == model.selectedWeek {
+                Text("Current")
+                    .font(.caption.weight(.semibold))
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(.blue.opacity(0.15), in: Capsule())
+                    .foregroundStyle(.blue)
+            }
         }
     }
 
@@ -61,6 +100,11 @@ struct ProgramScreen: View {
             }
             .font(.subheadline.weight(.semibold))
         }
+    }
+
+    private func initializeExpandedWeeksIfNeeded() {
+        guard expandedWeeks.isEmpty else { return }
+        expandedWeeks = [model.selectedWeek]
     }
 }
 

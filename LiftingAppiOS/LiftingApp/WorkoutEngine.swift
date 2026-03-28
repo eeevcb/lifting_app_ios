@@ -331,8 +331,8 @@ enum WorkoutEngine {
             targetAdjustmentPercent = -0.08
         } else if recommendation == .reduce {
             targetAdjustmentPercent = -0.03
-        } else if hasAnyEffortData && effortDelta <= -0.35 {
-            targetAdjustmentPercent = 0.02
+        } else if hasTopSetEffortData {
+            targetAdjustmentPercent = positiveTargetAdjustmentPercent(for: topSetFatigue)
         } else {
             targetAdjustmentPercent = 0
         }
@@ -510,17 +510,22 @@ enum WorkoutEngine {
         performedOn: Date
     ) -> LiftState {
         var updated = current
-        let bestEstimatedOneRepMax = summary.bestEstimatedOneRepMax ?? current.estimatedOneRepMax
-        let targetTrainingMax = roundToIncrement(bestEstimatedOneRepMax * 0.94)
+        let sessionEstimatedOneRepMax = recalibratedEstimatedOneRepMax(from: summary.bestEstimatedOneRepMax, fatigue: fatigue, current: current.estimatedOneRepMax)
+        let targetTrainingMax = roundToIncrement(sessionEstimatedOneRepMax * 0.95)
+        let estimatedOneRepMaxBlend = fatigue.targetAdjustmentPercent > 0 ? 0.4 : 0.3
 
-        updated.estimatedOneRepMax = round((current.estimatedOneRepMax * 0.7) + (bestEstimatedOneRepMax * 0.3))
+        updated.estimatedOneRepMax = roundToIncrement(
+            (current.estimatedOneRepMax * (1 - estimatedOneRepMaxBlend)) + (sessionEstimatedOneRepMax * estimatedOneRepMaxBlend)
+        )
         updated.lastGoodWorkingWeight = topWeight ?? current.lastGoodWorkingWeight
         updated.lastRecommendation = fatigue.recommendation
         updated.lastTargetAdjustmentPercent = fatigue.targetAdjustmentPercent
         updated.pendingTargetAdjustmentPercent = fatigue.targetAdjustmentPercent
         updated.fatigueScore = min(10, max(0, (current.fatigueScore * 0.55) + max(0, fatigue.effortDelta) * 2 + max(0, fatigue.topSetFatigue) * 1.25))
         if fatigue.recommendation == .hold {
-            updated.trainingMax = roundToIncrement(max(45, current.trainingMax * 0.9 + targetTrainingMax * 0.1 + (fatigue.targetAdjustmentPercent > 0 ? 2.5 : 0)))
+            let upwardBonus = fatigue.targetAdjustmentPercent > 0 ? 5.0 : 0
+            let blend = fatigue.targetAdjustmentPercent > 0 ? 0.2 : 0.1
+            updated.trainingMax = roundToIncrement(max(45, current.trainingMax * (1 - blend) + targetTrainingMax * blend + upwardBonus))
             updated.lastSuccessfulSessionDate = performedOn
         } else if fatigue.recommendation == .reduce {
             updated.trainingMax = roundToIncrement(max(45, current.trainingMax * 0.92 + targetTrainingMax * 0.08 - 5))
@@ -528,7 +533,41 @@ enum WorkoutEngine {
             updated.trainingMax = roundToIncrement(max(45, current.trainingMax * 0.88 + targetTrainingMax * 0.12 - 10))
         }
 
+        updated.estimatedOneRepMax = roundToIncrement(max(45, updated.estimatedOneRepMax))
+        updated.trainingMax = min(roundToIncrement(max(45, updated.trainingMax)), updated.estimatedOneRepMax)
+
         return updated
+    }
+
+    private static func positiveTargetAdjustmentPercent(for topSetFatigue: Double) -> Double {
+        if topSetFatigue <= -3.0 {
+            return 0.06
+        }
+        if topSetFatigue <= -2.0 {
+            return 0.04
+        }
+        if topSetFatigue <= -1.0 {
+            return 0.02
+        }
+        return 0
+    }
+
+    private static func recalibratedEstimatedOneRepMax(from bestEstimatedOneRepMax: Double?, fatigue: FatigueAssessment, current: Double) -> Double {
+        let baseEstimatedOneRepMax = bestEstimatedOneRepMax ?? current
+        let upwardBoost: Double
+
+        switch fatigue.targetAdjustmentPercent {
+        case 0.06...:
+            upwardBoost = 0.05
+        case 0.04...:
+            upwardBoost = 0.03
+        case 0.02...:
+            upwardBoost = 0.015
+        default:
+            upwardBoost = 0
+        }
+
+        return roundToIncrement(baseEstimatedOneRepMax * (1 + upwardBoost))
     }
 }
 
