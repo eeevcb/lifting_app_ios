@@ -417,6 +417,7 @@ final class AppModel {
 
     func removeSet(_ setID: UUID) {
         guard let currentEntry, var draft = drafts[currentEntry.key] else { return }
+        guard let set = draft.sets.first(where: { $0.id == setID }), set.setType != .topSet else { return }
         draft.sets.removeAll { $0.id == setID }
         draft.sets = draft.sets.sortedForDisplay().enumerated().map { index, set in
             var updated = set

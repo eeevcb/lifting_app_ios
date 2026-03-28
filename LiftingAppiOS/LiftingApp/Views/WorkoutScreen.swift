@@ -648,13 +648,18 @@ struct WorkoutScreen: View {
             }
         }
 
-        let didPresentBackoffRecommendation = (input.field == .rpe && input.setType == .topSet) ? maybePresentBackoffRecommendation() : false
-
-        if input.field == .rpe, value > 0, !didPresentBackoffRecommendation, model.autoStartRestTimerOnCompletion {
-            presentRestTimer(seconds: model.lastUsedRestDurationSeconds)
-        }
-
         activeNumericInput = nil
+
+        let shouldEvaluateBackoff = input.field == .rpe && input.setType == .topSet
+        let shouldAutoStartTimer = input.field == .rpe && value > 0 && model.autoStartRestTimerOnCompletion
+
+        DispatchQueue.main.async {
+            let didPresentBackoffRecommendation = shouldEvaluateBackoff ? maybePresentBackoffRecommendation() : false
+
+            if shouldAutoStartTimer, !didPresentBackoffRecommendation {
+                presentRestTimer(seconds: model.lastUsedRestDurationSeconds)
+            }
+        }
     }
 
     private func maybePresentBackoffRecommendation() -> Bool {
@@ -993,6 +998,7 @@ private struct WorkoutSetRow: View {
 
     private let insetBackground = Color(uiColor: .systemBackground)
     private var isLocked: Bool { self.isWorkoutFinished || self.set.completed || self.set.skipped }
+    private var canDelete: Bool { !isWorkoutFinished && set.setType != .topSet }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -1000,10 +1006,11 @@ private struct WorkoutSetRow: View {
                 Text("\(set.setOrder). \(set.setType.displayName)")
                     .font(.headline)
                 Spacer()
-                Button(role: .destructive, action: onDelete) {
-                    Image(systemName: "trash")
+                if canDelete {
+                    Button(role: .destructive, action: onDelete) {
+                        Image(systemName: "trash")
+                    }
                 }
-                .disabled(isWorkoutFinished)
             }
 
             VStack(alignment: .leading, spacing: 6) {
