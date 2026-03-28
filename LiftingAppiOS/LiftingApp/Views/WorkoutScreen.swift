@@ -193,7 +193,7 @@ struct WorkoutScreen: View {
                             HStack(spacing: 8) {
                                 ForEach(weeks, id: \.self) { week in
                                     selectionChip(
-                                        title: "Week \(week)",
+                                        title: "WK\(week)",
                                         isSelected: model.selectedWeek == week
                                     ) {
                                         model.select(week: week, day: model.selectedDay)
@@ -265,12 +265,12 @@ struct WorkoutScreen: View {
             Text("Engine Insights")
                 .font(.headline)
 
-            if let session = model.currentCompletedSession ?? model.latestCompletedSessionForCurrentLift {
+            if let session = model.currentCompletedSession {
                 let fatigue = session.fatigue
 
                 HStack {
-                    metricBlock(title: "Ramp Effort", value: effortString(actual: fatigue.actualRampEffort, expected: fatigue.expectedRampEffort))
-                    metricBlock(title: "\(WorkoutSetType.topSet.displayName) Effort", value: effortString(actual: fatigue.actualTopSetEffort, expected: fatigue.expectedTopSetEffort))
+                    metricBlock(title: "Ramp Effort RPE", value: effortString(actual: fatigue.actualRampEffort, expected: fatigue.expectedRampEffort))
+                    metricBlock(title: "Working Set Effort RPE", value: effortString(actual: fatigue.actualTopSetEffort, expected: fatigue.expectedTopSetEffort))
                 }
 
                 HStack {
@@ -286,21 +286,23 @@ struct WorkoutScreen: View {
                 .padding()
                 .background(insetBackground, in: RoundedRectangle(cornerRadius: 14))
 
-                Text("Effort compares the average recorded RPE for completed sets against the target RPE the engine expected for this phase.")
+                Text("Effort compares the average recorded RPE for completed sets against the target RPE the engine expected for this workout prescription.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+
+                Text("Target RPE changes with the program. Higher-intensity prescriptions like 3x3, 2x2, openers, and max singles carry higher working-set RPE targets than 4x8 or 5x5 days.")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
 
                 Text("Progression stays neutral without RPE data, and skipped sets alone do not trigger deload logic.")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
-
-                if session.programEntry.key != entry.key {
-                    Text("Showing the latest completed \(session.programEntry.primaryLift.displayName) session until this workout is finished.")
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                }
             } else {
-                Text("Finish a workout to see how the engine compares expected and actual effort, decides on backoff work, and seeds the next target.")
+                Text("Finish this workout to see how the engine compares actual effort to target effort, decides on backoff work, and seeds the next target.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+
+                Text("These effort targets use the RPE 1-10 scale. The target changes with the workout prescription, so 4x8 and 5x5 days are easier than 3x3, 2x2, openers, and max-single days.")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             }
@@ -478,7 +480,7 @@ struct WorkoutScreen: View {
     }
 
     private func effortString(actual: Double, expected: Double) -> String {
-        String(format: "%.1f actual vs %.1f expected", actual, expected)
+        String(format: "%.1f / 10 actual vs %.1f / 10 target", actual, expected)
     }
 
     private func percentString(from value: Double) -> String {
@@ -682,11 +684,11 @@ private struct CompletionSummarySheet: View {
             }
 
             HStack {
-                summaryMetric(title: "Ramp Effort", value: effortString(actual: session.fatigue.actualRampEffort, expected: session.fatigue.expectedRampEffort))
-                summaryMetric(title: "\(WorkoutSetType.topSet.displayName) Effort", value: effortString(actual: session.fatigue.actualTopSetEffort, expected: session.fatigue.expectedTopSetEffort))
+                summaryMetric(title: "Ramp Effort RPE", value: effortString(actual: session.fatigue.actualRampEffort, expected: session.fatigue.expectedRampEffort))
+                summaryMetric(title: "Working Set Effort RPE", value: effortString(actual: session.fatigue.actualTopSetEffort, expected: session.fatigue.expectedTopSetEffort))
             }
 
-            Text("Ramp effort is the average recorded RPE from completed ramp sets against target ramp RPE. Working-set effort is the same comparison for completed working sets.")
+            Text("Ramp effort is the average recorded RPE from completed ramp sets against target ramp RPE. Working-set effort is the same comparison for completed working sets, and the target changes with the workout prescription.")
                 .font(.footnote)
                 .foregroundStyle(.secondary)
 
@@ -740,7 +742,7 @@ private struct CompletionSummarySheet: View {
     }
 
     private func effortString(actual: Double, expected: Double) -> String {
-        String(format: "%.1f actual vs %.1f expected", actual, expected)
+        String(format: "%.1f / 10 actual vs %.1f / 10 target", actual, expected)
     }
 
     private func percentString(_ value: Double) -> String {

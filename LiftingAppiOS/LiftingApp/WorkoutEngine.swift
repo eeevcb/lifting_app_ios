@@ -393,21 +393,27 @@ enum WorkoutEngine {
         )
     }
 
-    private static func defaultExpectedEffort(for entry: ProgramEntry) -> Double {
-        switch entry.phase {
-        case .volume: 7.0
-        case .strength: 7.8
-        case .peak: 8.5
-        case .taper: 6.5
-        }
-    }
-
     private static func expectedRampEffort(for entry: ProgramEntry) -> Double {
-        switch entry.phase {
-        case .volume: 6.0
-        case .strength: 6.8
-        case .peak: 7.4
-        case .taper: 5.8
+        switch entry.plannedType {
+        case .deload:
+            return 5.5
+        case .workingSets:
+            switch (entry.sets, entry.reps) {
+            case (4, 8):
+                return 6.0
+            case (5, 5):
+                return 6.4
+            case (3, 3):
+                return 6.8
+            case (2, 2):
+                return 7.2
+            default:
+                return 6.5
+            }
+        case .opener:
+            return 6.8
+        case .maxSingle:
+            return 7.4
         }
     }
 
@@ -418,9 +424,20 @@ enum WorkoutEngine {
         case .opener:
             return 7.8
         case .maxSingle:
-            return 8.8
+            return 9.0
         case .workingSets:
-            return defaultExpectedEffort(for: entry) + (entry.reps <= 2 ? 0.4 : 0)
+            switch (entry.sets, entry.reps) {
+            case (4, 8):
+                return 7.0
+            case (5, 5):
+                return 7.5
+            case (3, 3):
+                return 8.0
+            case (2, 2):
+                return 8.5
+            default:
+                return entry.phase == .taper ? 6.8 : 7.5
+            }
         }
     }
 
