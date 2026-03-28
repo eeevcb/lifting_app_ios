@@ -341,9 +341,15 @@ final class AppModel {
         guard let currentEntry, var draft = drafts[currentEntry.key] else { return }
         guard let index = draft.sets.firstIndex(where: { $0.id == setID }) else { return }
         mutate(&draft.sets[index])
-        if draft.sets[index].setType == .variation {
-            draft.selectedVariation.profileName = draft.sets[index].variationProfileName ?? draft.sets[index].exerciseName
-            draft.selectedVariation.chainCountPerSide = draft.sets[index].chainCountPerSide
+        let updatedSet = draft.sets[index]
+        if updatedSet.setType == .variation {
+            draft.selectedVariation.profileName = updatedSet.variationProfileName ?? updatedSet.exerciseName
+            draft.selectedVariation.chainCountPerSide = updatedSet.chainCountPerSide
+        }
+        draft.sets = draft.sets.sortedForDisplay().enumerated().map { index, set in
+            var reordered = set
+            reordered.setOrder = index + 1
+            return reordered
         }
         drafts[currentEntry.key] = draft
         persist()

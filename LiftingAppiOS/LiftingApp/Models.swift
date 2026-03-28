@@ -521,9 +521,35 @@ extension Array where Element == WorkoutSet {
     func sortedForDisplay() -> [WorkoutSet] {
         sorted { lhs, rhs in
             if lhs.setType == rhs.setType {
+                let lhsWeight = lhs.displaySortWeight
+                let rhsWeight = rhs.displaySortWeight
+
+                if lhsWeight != rhsWeight {
+                    return lhsWeight < rhsWeight
+                }
+
+                if lhs.exerciseName != rhs.exerciseName {
+                    return lhs.exerciseName < rhs.exerciseName
+                }
+
                 return lhs.setOrder < rhs.setOrder
             }
             return lhs.setType.sortIndex < rhs.setType.sortIndex
         }
+    }
+}
+
+private extension WorkoutSet {
+    var displaySortWeight: Double {
+        let load = totalDisplayedLoad
+        if load > 0 {
+            return load
+        }
+
+        if let weight, weight > 0 {
+            return weight
+        }
+
+        return .greatestFiniteMagnitude
     }
 }
