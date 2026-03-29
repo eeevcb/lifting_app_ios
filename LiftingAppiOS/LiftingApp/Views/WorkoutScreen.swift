@@ -996,6 +996,7 @@ private struct WorkoutSetRow: View {
     let onChange: (WorkoutSet, Bool) -> Void
     let onDelete: () -> Void
 
+    @State private var isShowingVariationPicker = false
     private let insetBackground = Color(uiColor: .systemBackground)
     private var isLocked: Bool { self.isWorkoutFinished || self.set.completed || self.set.skipped }
     private var canDelete: Bool { !isWorkoutFinished && set.setType != .topSet }
@@ -1106,6 +1107,18 @@ private struct WorkoutSetRow: View {
         .padding()
         .background(insetBackground, in: RoundedRectangle(cornerRadius: 16))
         .opacity(set.skipped ? 0.6 : 1)
+        .confirmationDialog(
+            "Select Variation",
+            isPresented: $isShowingVariationPicker,
+            titleVisibility: .visible
+        ) {
+            ForEach(variationOptions, id: \.self) { option in
+                Button(option) {
+                    onVariationChange(option)
+                }
+            }
+            Button("Cancel", role: .cancel) {}
+        }
     }
 
     @ViewBuilder
@@ -1206,12 +1219,8 @@ private struct WorkoutSetRow: View {
     }
 
     private var variationMenu: some View {
-        Menu {
-            ForEach(variationOptions, id: \.self) { option in
-                Button(option) {
-                    onVariationChange(option)
-                }
-            }
+        Button {
+            isShowingVariationPicker = true
         } label: {
             HStack {
                 Text(set.exerciseName)
@@ -1227,6 +1236,7 @@ private struct WorkoutSetRow: View {
             .background(Color(uiColor: .secondarySystemBackground), in: RoundedRectangle(cornerRadius: 8))
             .foregroundStyle(.primary)
         }
+        .buttonStyle(.plain)
         .disabled(isLocked)
     }
 

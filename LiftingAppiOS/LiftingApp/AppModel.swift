@@ -34,7 +34,7 @@ final class AppModel {
             let defaultStartDate = ProgramDefinition.defaultStartDate
             programStartDate = defaultStartDate
             selectedWeek = ProgramDefinition.weeks().first ?? 1
-            selectedDay = .friday
+            selectedDay = .monday
             lastAutoSelectedDate = nil
             lastUsedRestDurationSeconds = 180
             autoStartRestTimerOnCompletion = true
@@ -342,6 +342,7 @@ final class AppModel {
     func select(week: Int, day: TrainingDay) {
         selectedWeek = week
         selectedDay = day
+        lastAutoSelectedDate = Calendar.current.startOfDay(for: .now)
         ensureDraftForSelection()
         persist()
     }
@@ -538,8 +539,9 @@ final class AppModel {
         programStartDate = normalizedStartDate
         selectedWeek = ProgramDefinition.weeks().first ?? 1
         selectedDay = .monday
-        lastAutoSelectedDate = nil
+        lastAutoSelectedDate = Calendar.current.startOfDay(for: .now)
         drafts = [:]
+        liftStates = Self.resetForNewProgram(from: liftStates)
         activeRun = ProgramRun(startedAt: normalizedStartDate, programStartDate: normalizedStartDate)
         lastCompletionSummary = nil
         selectedTab = .workout
@@ -838,6 +840,16 @@ final class AppModel {
             normalized[lift] = updated
         }
         return normalized
+    }
+
+    private static func resetForNewProgram(from states: [LiftType: LiftState]) -> [LiftType: LiftState] {
+        var reset = normalizedLiftStates(states)
+        for lift in reset.keys {
+            reset[lift]?.lastRecommendation = .hold
+            reset[lift]?.lastTargetAdjustmentPercent = 0
+            reset[lift]?.pendingTargetAdjustmentPercent = 0
+        }
+        return reset
     }
 
     private static func roundToIncrement(_ value: Double, increment: Double = 5) -> Double {
